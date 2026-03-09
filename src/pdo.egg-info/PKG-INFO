@@ -1,0 +1,12 @@
+Metadata-Version: 2.4
+Name: pdo
+Version: 0.1.0
+Summary: Product Description Optimizer — daemon/CLI tool for batch-optimizing product descriptions.
+License-Expression: MIT
+Requires-Python: >=3.12
+Requires-Dist: click>=8.1
+Requires-Dist: rich>=13.0
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-cov>=5.0; extra == "dev"
+Requires-Dist: ruff>=0.4; extra == "dev"

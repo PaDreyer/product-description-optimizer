@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "pdo"
+version = "0.1.0"
+description = "Product Description Optimizer — daemon/CLI tool for batch-optimizing product descriptions."
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "click>=8.1",
+    "rich>=13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.4",
+]
+
+[project.scripts]
+pdo = "pdo.cli.main:cli"
+
+# ── Tool configuration ──────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers -v"

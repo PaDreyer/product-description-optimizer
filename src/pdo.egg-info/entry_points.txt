@@ -1,0 +1,2 @@
+[console_scripts]
+pdo = pdo.cli.main:cli

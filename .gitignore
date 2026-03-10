@@ -20,6 +20,9 @@ venv/
 .coverage
 htmlcov/
 
+# Linting
+.ruff_cache/
+
 # Pytest
 .pytest_cache/
 

@@ -40,15 +40,37 @@ def start(ctx: click.Context, *, foreground: bool) -> None:
 
 
 @daemon.command()
+@click.option("--force", is_flag=True, help="Force kill the daemon process and remove PID/socket files.")
 @global_options()
 @click.pass_context
-def stop(ctx: click.Context) -> None:
+def stop(ctx: click.Context, *, force: bool) -> None:
     """Stop the running daemon."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
+    import signal
+    from pdo.daemon.pid import send_signal, remove_pid
+
+    if force:
+        config = load_config()
+        pid_path = config.data_dir / "daemon.pid"
+        if send_signal(pid_path, signal.SIGTERM):
+            ctx.obj.out.result(success=True, msg="[green]Daemon force-killed using SIGTERM.[/green]")
+        else:
+            ctx.obj.out.result(success=False, error="Daemon PID not found or permission denied.")
+        # Ensure cleanup
+        remove_pid(pid_path)
+        config.socket_path.unlink(missing_ok=True)
+        return
 
     try:
         resp = send_command("stop")
+        if not resp.success:
+            ctx.obj.out.result(
+                success=False, 
+                error=f"Failed to stop via IPC: {resp.error}. Try using 'pdo daemon stop --force' or 'pdo daemon repair'."
+            )
+            return
+            
         ctx.obj.out.result(
             success=resp.success, 
             error=resp.error, 
@@ -59,6 +81,43 @@ def stop(ctx: click.Context) -> None:
             ctx.obj.out.result(success=False, error="Daemon is not running.")
         else:
             ctx.obj.out.print("[yellow]Daemon is not running.[/yellow]")
+
+
+@daemon.command()
+@global_options()
+@click.pass_context
+def repair(ctx: click.Context) -> None:
+    """Repair an unresponsive daemon by forcefully cleaning it up."""
+    import signal
+    from pdo.daemon.pid import send_signal, remove_pid
+
+    config = load_config()
+    pid_path = config.data_dir / "daemon.pid"
+    socket_path = config.socket_path
+    
+    msgs = ["[yellow]Commencing daemon repair …[/yellow]"]
+    
+    # Attempt gentle kill first, then forceful
+    killed = False
+    if send_signal(pid_path, signal.SIGTERM):
+        msgs.append("[green]✓ Sent SIGTERM to stale daemon process.[/green]")
+        killed = True
+    elif send_signal(pid_path, signal.SIGKILL):
+        msgs.append("[green]✓ Sent SIGKILL to stale daemon process.[/green]")
+        killed = True
+        
+    if not killed:
+        msgs.append("[dim]No running daemon process found to kill.[/dim]")
+
+    remove_pid(pid_path)
+    socket_path.unlink(missing_ok=True)
+    msgs.append("[green]✓ Cleaned up stale PID and socket files.[/green]")
+    msgs.append("[bold green]Repair complete. You can now start the daemon.[/bold green]")
+    
+    if ctx.obj.json_output:
+        ctx.obj.out.result(success=True, msg="Daemon repaired")
+    else:
+        ctx.obj.out.print("\n".join(msgs))
 
 
 @daemon.command("status")

@@ -67,6 +67,35 @@ class TestDaemonCommands:
         assert result.exit_code == 0
         assert "stopping" in result.output.lower()
 
+    @patch("pdo.daemon.pid.send_signal")
+    @patch("pdo.daemon.pid.remove_pid")
+    def test_daemon_stop_force(self, mock_remove, mock_kill, runner: CliRunner) -> None:
+        mock_kill.return_value = True
+        result = runner.invoke(cli, ["daemon", "stop", "--force"])
+        assert result.exit_code == 0
+        assert "force-killed" in result.output
+        mock_kill.assert_called_once()
+        mock_remove.assert_called_once()
+
+    @patch("pdo.cli.client.send_command")
+    def test_daemon_stop_fallback_hint(self, mock_cmd, runner: CliRunner) -> None:
+        mock_cmd.return_value = _mock_response(success=False, error="Version mismatch")
+        result = runner.invoke(cli, ["daemon", "stop"])
+        assert result.exit_code == 0
+        assert "pdo daemon stop" in result.output
+        assert "--force" in result.output
+        assert "pdo daemon repair" in result.output
+
+    @patch("pdo.daemon.pid.send_signal")
+    @patch("pdo.daemon.pid.remove_pid")
+    def test_daemon_repair(self, mock_remove, mock_kill, runner: CliRunner) -> None:
+        mock_kill.return_value = True
+        result = runner.invoke(cli, ["daemon", "repair"])
+        assert result.exit_code == 0
+        assert "Commencing daemon repair" in result.output
+        assert "Cleaned up stale PID" in result.output
+        mock_remove.assert_called_once()
+
 
 # ── Import Command ───────────────────────────────────────────────────
 

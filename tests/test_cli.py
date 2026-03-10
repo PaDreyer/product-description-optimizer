@@ -39,7 +39,7 @@ class TestRootCli:
     def test_version(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["version"])
         assert result.exit_code == 0
-        assert "pdo" in result.output
+        assert "Client version:" in result.output
 
 
 # ── Daemon Commands ──────────────────────────────────────────────────

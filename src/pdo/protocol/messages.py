@@ -10,6 +10,7 @@ import socket
 from dataclasses import asdict, dataclass, field
 from typing import Any, Self
 
+from pdo import __version__
 from pdo.exceptions import ProtocolError
 
 # Maximum message size (1 MiB) — prevents unbounded reads.
@@ -22,6 +23,7 @@ class Request:
 
     action: str
     payload: dict[str, Any] = field(default_factory=dict)
+    client_version: str = field(default=__version__)
 
     def to_json(self) -> str:
         """Serialise to a JSON string."""
@@ -36,7 +38,11 @@ class Request:
             raise ProtocolError(f"Invalid JSON in request: {exc}") from exc
         if "action" not in data:
             raise ProtocolError("Request missing 'action' field")
-        return cls(action=data["action"], payload=data.get("payload", {}))
+        return cls(
+            action=data["action"], 
+            payload=data.get("payload", {}),
+            client_version=data.get("client_version", "unknown")
+        )
 
 
 @dataclass
@@ -46,6 +52,7 @@ class Response:
     success: bool
     data: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
+    server_version: str = field(default=__version__)
 
     def to_json(self) -> str:
         """Serialise to a JSON string."""
@@ -64,6 +71,7 @@ class Response:
             success=data["success"],
             data=data.get("data", {}),
             error=data.get("error"),
+            server_version=data.get("server_version", "unknown"),
         )
 
 

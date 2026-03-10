@@ -16,6 +16,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from pdo import __version__
 from pdo.config import PdoConfig, load_config
 from pdo.core.db import Database
 from pdo.daemon.pid import is_daemon_running, remove_pid, write_pid
@@ -162,6 +163,12 @@ class DaemonServer:
     def _dispatch(self, request: Request) -> Response:
         """Route a request to the appropriate handler."""
         assert self._worker is not None
+
+        if request.client_version != __version__:
+            return Response(
+                success=False, 
+                error=f"Version mismatch: CLI client is v{request.client_version}, but daemon is v{__version__}."
+            )
 
         handlers: dict[str, Any] = {
             "import": self._handle_import,

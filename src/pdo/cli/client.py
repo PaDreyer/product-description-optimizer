@@ -9,8 +9,9 @@ from __future__ import annotations
 import socket
 from typing import Any
 
+from pdo import __version__
 from pdo.config import PdoConfig, load_config
-from pdo.exceptions import DaemonNotRunningError
+from pdo.exceptions import DaemonNotRunningError, ProtocolError
 from pdo.protocol.messages import (
     Request,
     Response,
@@ -67,7 +68,7 @@ def send_command(
         raw = receive_message(sock)
         return Response(**raw)
     except Exception as exc:
-        if isinstance(exc, DaemonNotRunningError):
+        if isinstance(exc, (DaemonNotRunningError, ProtocolError)):
             raise
         raise DaemonNotRunningError(f"Communication error: {exc}") from exc
     finally:

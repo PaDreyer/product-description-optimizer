@@ -39,10 +39,37 @@ def cli(ctx: click.Context, *, config: Path | None) -> None:
 @click.pass_context
 def version(ctx: click.Context) -> None:
     """Print the PDO version."""
+    from pdo.cli.client import send_command
+    from pdo.exceptions import DaemonNotRunningError
+
+    daemon_version = None
+    try:
+        resp = send_command("ping")
+        if resp.success:
+            # We assume the protocol has been upgraded to include server_version.
+            daemon_version = getattr(resp, "server_version", "unknown")
+        else:
+            # If there was a version mismatch during ping, the error message from the
+            # server usually contains the version.
+            if "Version mismatch" in (resp.error or ""):
+                # E.g. "Version mismatch: CLI client is v0.1.0, but daemon is v0.2.0"
+                # We can just let the error surface or extract it, 
+                # but let's be explicit.
+                daemon_version = "mismatch"
+    except DaemonNotRunningError:
+        daemon_version = "not running"
+        
     if ctx.obj.json_output:
-        ctx.obj.out.emit_json({"version": __version__})
+        ctx.obj.out.emit_json({"client_version": __version__, "server_version": daemon_version})
         return
-    ctx.obj.out.print(f"pdo [bold cyan]{__version__}[/bold cyan]")
+
+    ctx.obj.out.print(f"Client version: [bold cyan]{__version__}[/bold cyan]")
+    if daemon_version == "not running":
+        ctx.obj.out.print("Daemon version: [dim]not running[/dim]")
+    elif daemon_version == "mismatch":
+        ctx.obj.out.print("Daemon version: [bold red]version mismatch (check logs/restart)[/bold red]")
+    else:
+        ctx.obj.out.print(f"Daemon version: [bold green]{daemon_version}[/bold green]")
 
 
 @cli.command()

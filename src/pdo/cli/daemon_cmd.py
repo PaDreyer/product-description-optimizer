@@ -5,12 +5,10 @@ from __future__ import annotations
 import sys
 
 import click
-from rich.console import Console
 
+from pdo.cli.common import global_options
 from pdo.config import load_config
 from pdo.daemon.pid import is_daemon_running
-
-console = Console()
 
 
 @click.group()
@@ -20,46 +18,62 @@ def daemon() -> None:
 
 @daemon.command()
 @click.option("--foreground", is_flag=True, help="Run in the foreground (debug mode).")
-def start(*, foreground: bool) -> None:
+@global_options()
+@click.pass_context
+def start(ctx: click.Context, *, foreground: bool) -> None:
     """Start the daemon process."""
     config = load_config()
     pid_path = config.data_dir / "daemon.pid"
 
     if is_daemon_running(pid_path):
-        console.print("[yellow]Daemon is already running.[/yellow]")
+        if ctx.obj.json_output:
+            ctx.obj.out.result(success=False, error="Daemon is already running.")
+        else:
+            ctx.obj.out.print("[yellow]Daemon is already running.[/yellow]")
         sys.exit(1)
 
     from pdo.daemon.server import DaemonServer
 
     server = DaemonServer(config=config)
-    console.print("[green]Starting daemon …[/green]")
+    ctx.obj.out.result(success=True, status="starting daemon", msg="[green]Starting daemon …[/green]")
     server.start(foreground=foreground)
 
 
 @daemon.command()
-def stop() -> None:
+@global_options()
+@click.pass_context
+def stop(ctx: click.Context) -> None:
     """Stop the running daemon."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
     try:
         resp = send_command("stop")
-        if resp.success:
-            console.print("[green]Daemon is stopping.[/green]")
-        else:
-            console.print(f"[red]Error:[/red] {resp.error}")
+        ctx.obj.out.result(
+            success=resp.success, 
+            error=resp.error, 
+            msg="[green]Daemon is stopping.[/green]"
+        )
     except DaemonNotRunningError:
-        console.print("[yellow]Daemon is not running.[/yellow]")
+        if ctx.obj.json_output:
+            ctx.obj.out.result(success=False, error="Daemon is not running.")
+        else:
+            ctx.obj.out.print("[yellow]Daemon is not running.[/yellow]")
 
 
 @daemon.command("status")
-def daemon_status() -> None:
+@global_options()
+@click.pass_context
+def daemon_status(ctx: click.Context) -> None:
     """Check whether the daemon is running."""
     config = load_config()
     pid_path = config.data_dir / "daemon.pid"
 
     if not is_daemon_running(pid_path):
-        console.print("[red]●[/red] Daemon is [bold]stopped[/bold]")
+        if ctx.obj.json_output:
+            ctx.obj.out.emit_json({"running": False, "responding": False})
+        else:
+            ctx.obj.out.print("[red]●[/red] Daemon is [bold]stopped[/bold]")
         return
 
     from pdo.cli.client import send_command
@@ -67,9 +81,16 @@ def daemon_status() -> None:
 
     try:
         resp = send_command("ping", config=config)
+        if ctx.obj.json_output:
+            ctx.obj.out.emit_json({"running": True, "responding": resp.success})
+            return
+            
         if resp.success:
-            console.print("[green]●[/green] Daemon is [bold]running[/bold]")
+            ctx.obj.out.print("[green]●[/green] Daemon is [bold]running[/bold]")
         else:
-            console.print("[yellow]●[/yellow] Daemon PID exists but not responding")
+            ctx.obj.out.print("[yellow]●[/yellow] Daemon PID exists but not responding")
     except DaemonNotRunningError:
-        console.print("[yellow]●[/yellow] Daemon PID exists but not responding")
+        if ctx.obj.json_output:
+            ctx.obj.out.emit_json({"running": True, "responding": False})
+        else:
+            ctx.obj.out.print("[yellow]●[/yellow] Daemon PID exists but not responding")

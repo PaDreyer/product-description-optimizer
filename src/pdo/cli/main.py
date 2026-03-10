@@ -7,21 +7,11 @@ This module defines the top-level Click group and the global options
 from __future__ import annotations
 
 import click
-from rich.console import Console
 from pathlib import Path
 
 from pdo import __version__
 
-console = Console()
-
-
-class _CliContext:
-    """Simple namespace stored in ``click.Context.obj`` to share global flags."""
-
-    def __init__(self) -> None:
-        self.json_output: bool = False
-        self.verbose: bool = False
-        self.config_path: Path | None = None
+from pdo.cli.common import _CliContext, global_options
 
 
 @click.group()
@@ -30,31 +20,35 @@ class _CliContext:
     type=click.Path(dir_okay=False, path_type=Path),
     help="Path to a custom config file.",
 )
-@click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON output.")
-@click.option("--verbose", "-v", is_flag=True, help="Enable verbose / debug output.")
+@global_options()
 @click.pass_context
-def cli(ctx: click.Context, *, config: Path | None, json_output: bool, verbose: bool) -> None:
+def cli(ctx: click.Context, *, config: Path | None) -> None:
     """PDO — Product Description Optimizer.
 
     A daemon/client CLI for batch-optimizing product descriptions.
     """
     ctx.ensure_object(_CliContext)
     ctx.obj.config_path = config
-    ctx.obj.json_output = json_output
-    ctx.obj.verbose = verbose
 
 
 # ── Simple top-level commands ────────────────────────────────────────
 
 
 @cli.command()
-def version() -> None:
+@global_options()
+@click.pass_context
+def version(ctx: click.Context) -> None:
     """Print the PDO version."""
-    console.print(f"pdo [bold cyan]{__version__}[/bold cyan]")
+    if ctx.obj.json_output:
+        ctx.obj.out.emit_json({"version": __version__})
+        return
+    ctx.obj.out.print(f"pdo [bold cyan]{__version__}[/bold cyan]")
 
 
 @cli.command()
-def status() -> None:
+@global_options()
+@click.pass_context
+def status(ctx: click.Context) -> None:
     """Show current pipeline status and progress."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
@@ -62,10 +56,14 @@ def status() -> None:
     try:
         resp = send_command("status")
         if not resp.success:
-            console.print(f"[red]Error:[/red] {resp.error}")
+            ctx.obj.out.result(success=False, error=resp.error)
             return
 
         data = resp.data
+        if ctx.obj.json_output:
+            ctx.obj.out.emit_json(data)
+            return
+            
         stage = data.get("stage", "unknown")
         progress = data.get("progress", {})
         total = progress.get("total", 0)
@@ -79,76 +77,83 @@ def status() -> None:
         }
         color = stage_colors.get(stage, "white")
 
-        console.print(f"Stage:    [{color}]{stage}[/{color}]")
-        console.print(f"Total:    {total}")
-        console.print(f"Done:     [green]{done}[/green]")
-        console.print(f"Pending:  {pending}")
-        console.print(f"Errors:   [red]{error}[/red]")
+        ctx.obj.out.print(f"Stage:    [{color}]{stage}[/{color}]")
+        ctx.obj.out.print(f"Total:    {total}")
+        ctx.obj.out.print(f"Done:     [green]{done}[/green]")
+        ctx.obj.out.print(f"Pending:  {pending}")
+        ctx.obj.out.print(f"Errors:   [red]{error}[/red]")
 
         if total > 0:
             pct = int((done + error) / total * 100)
-            console.print(f"Progress: {pct}%")
+            ctx.obj.out.print(f"Progress: {pct}%")
 
         if data.get("paused"):
-            console.print("[yellow]⏸  Paused[/yellow]")
+            ctx.obj.out.print("[yellow]⏸  Paused[/yellow]")
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
 
 
 @cli.command()
-def pause() -> None:
+@global_options()
+@click.pass_context
+def pause(ctx: click.Context) -> None:
     """Pause the current optimization."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
     try:
         resp = send_command("pause")
-        if resp.success:
-            console.print("[yellow]⏸  Paused[/yellow]")
-        else:
-            console.print(f"[red]Error:[/red] {resp.error}")
+        ctx.obj.out.result(success=resp.success, error=resp.error, msg="[yellow]⏸  Paused[/yellow]")
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
 
 
 @cli.command()
-def resume() -> None:
+@global_options()
+@click.pass_context
+def resume(ctx: click.Context) -> None:
     """Resume a paused optimization."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
     try:
         resp = send_command("resume")
-        if resp.success:
-            console.print("[green]▶  Resumed[/green]")
-        else:
-            console.print(f"[red]Error:[/red] {resp.error}")
+        ctx.obj.out.result(success=resp.success, error=resp.error, msg="[green]▶  Resumed[/green]")
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
 
 
 @cli.command()
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
-def reset(*, yes: bool) -> None:
+@global_options()
+@click.pass_context
+def reset(ctx: click.Context, *, yes: bool) -> None:
     """Reset the database — stops any running operation, then clears all data."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
-    if not yes and not click.confirm(
+    if not yes and not ctx.obj.json_output and not click.confirm(
         "This will stop any running operation and delete all data. Continue?"
     ):
-        console.print("[dim]Aborted.[/dim]")
+        ctx.obj.out.print("[dim]Aborted.[/dim]")
         return
 
     try:
-        with console.status("[bold cyan]Resetting…[/bold cyan]"):
-            resp = send_command("reset")
-        if resp.success:
-            console.print("[green]✓[/green] All operations stopped, database reset")
+        from rich.console import Console
+        console = Console()
+        if not ctx.obj.json_output:
+            with console.status("[bold cyan]Resetting…[/bold cyan]"):
+                resp = send_command("reset")
         else:
-            console.print(f"[red]Error:[/red] {resp.error}")
+            resp = send_command("reset")
+            
+        ctx.obj.out.result(
+            success=resp.success, 
+            error=resp.error, 
+            msg="[green]✓[/green] All operations stopped, database reset"
+        )
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
 
 
 # ── Register subcommand groups and commands ──────────────────────────

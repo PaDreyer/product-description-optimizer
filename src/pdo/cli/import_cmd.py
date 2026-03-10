@@ -5,10 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
-from rich.console import Console
 
-console = Console()
-
+from pdo.cli.common import global_options
 
 @click.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
@@ -22,7 +20,9 @@ console = Console()
     ),
 )
 @click.option("--delimiter", "-d", default=";", help="CSV delimiter (default: ;).")
-def import_cmd(file: Path, mapping: tuple[str, ...], delimiter: str) -> None:
+@global_options()
+@click.pass_context
+def import_cmd(ctx: click.Context, file: Path, mapping: tuple[str, ...], delimiter: str) -> None:
     """Import a CSV file into the database.
 
     Each --mapping / -m flag maps a CSV column to one of three roles:
@@ -36,23 +36,20 @@ def import_cmd(file: Path, mapping: tuple[str, ...], delimiter: str) -> None:
     from pdo.exceptions import DaemonNotRunningError
 
     if not mapping:
-        console.print(
-            "[red]Error:[/red] At least one --mapping is required "
-            "(e.g. -m description:Beschreibung)"
-        )
+        err = "At least one --mapping is required (e.g. -m description:Beschreibung)"
+        ctx.obj.out.result(success=False, error=err)
         raise SystemExit(1)
 
     column_mappings = []
     for m in mapping:
         if ":" not in m:
-            console.print(f"[red]Error:[/red] Invalid mapping format: {m!r} (expected ROLE:COLUMN)")
+            err = f"Invalid mapping format: {m!r} (expected ROLE:COLUMN)"
+            ctx.obj.out.result(success=False, error=err)
             raise SystemExit(1)
         role, col = m.split(":", 1)
         if role not in {"product_id", "description", "context"}:
-            console.print(
-                f"[red]Error:[/red] Unknown role: {role!r}"
-                " (use product_id, description, or context)"
-            )
+            err = f"Unknown role: {role!r} (use product_id, description, or context)"
+            ctx.obj.out.result(success=False, error=err)
             raise SystemExit(1)
         column_mappings.append({"role": role, "csv_column_name": col, "display_name": col})
 
@@ -63,12 +60,20 @@ def import_cmd(file: Path, mapping: tuple[str, ...], delimiter: str) -> None:
     }
 
     try:
-        with console.status("[bold cyan]Importing…[/bold cyan]"):
-            resp = send_command("import", payload)
-        if resp.success:
-            console.print(f"[green]✓[/green] {resp.data.get('message', 'Import started')}")
+        from rich.console import Console
+        console = Console()
+        if not ctx.obj.json_output:
+            with console.status("[bold cyan]Importing…[/bold cyan]"):
+                resp = send_command("import", payload)
         else:
-            console.print(f"[red]✗[/red] {resp.error}")
+            resp = send_command("import", payload)
+            
+        ctx.obj.out.result(
+            success=resp.success, 
+            data=resp.data if resp.success else dict(),
+            error=resp.error, 
+            msg=f"[green]✓[/green] {resp.data.get('message', 'Import started') if resp.success else ''}"
+        )
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
         raise SystemExit(1) from exc

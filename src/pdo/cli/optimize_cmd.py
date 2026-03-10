@@ -5,9 +5,8 @@ from __future__ import annotations
 import time
 
 import click
-from rich.console import Console
 
-console = Console()
+from pdo.cli.common import global_options
 
 
 @click.command()
@@ -24,7 +23,9 @@ console = Console()
     default=None,
     help="API key for the optimizer (alternative to GEMINI_API_KEY env var).",
 )
-def optimize(*, watch: bool, optimizer_name: str | None, api_key: str | None) -> None:
+@global_options()
+@click.pass_context
+def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None, api_key: str | None) -> None:
     """Start optimizing imported products.
 
     Use --watch to see a live progress display until optimization completes.
@@ -39,9 +40,11 @@ def optimize(*, watch: bool, optimizer_name: str | None, api_key: str | None) ->
 
         known = [o.name for o in list_optimizers()]
         if optimizer_name not in known:
-            console.print(
-                f"[red]✗[/red] Unknown optimizer: [bold]{optimizer_name}[/bold]. "
-                f"Available: {', '.join(known)}"
+            err = f"Unknown optimizer: {optimizer_name}. Available: {', '.join(known)}"
+            ctx.obj.out.result(
+                success=False, 
+                error=err, 
+                msg=f"[red]✗[/red] Unknown optimizer: [bold]{optimizer_name}[/bold]. Available: {', '.join(known)}"
             )
             raise SystemExit(1)
 
@@ -53,22 +56,23 @@ def optimize(*, watch: bool, optimizer_name: str | None, api_key: str | None) ->
 
     try:
         resp = send_command("optimize", payload=payload or None)
-        if not resp.success:
-            console.print(f"[red]✗[/red] {resp.error}")
+        ctx.obj.out.result(success=resp.success, error=resp.error, msg="[green]✓[/green] Optimization started")
+        
+        if not resp.success or ctx.obj.json_output:
             return
-
-        console.print("[green]✓[/green] Optimization started")
 
         if watch:
             _watch_progress()
     except DaemonNotRunningError as exc:
-        console.print(f"[red]Error:[/red] {exc}")
+        ctx.obj.out.result(success=False, error=str(exc))
         raise SystemExit(1) from exc
 
 
 def _watch_progress() -> None:
     """Poll the daemon for status updates until optimization finishes."""
     from pdo.cli.client import send_command
+    from rich.console import Console
+    console = Console()
 
     with console.status("[bold cyan]Optimizing…[/bold cyan]") as status:
         while True:

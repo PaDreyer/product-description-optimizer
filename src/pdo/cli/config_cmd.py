@@ -7,12 +7,10 @@ import tomllib
 from pathlib import Path
 
 import click
-from rich.console import Console
 
+from pdo.cli.common import global_options
 from pdo.config import PdoConfig
 from pdo.exceptions import ConfigError
-
-console = Console()
 
 
 def _load_config_dict(path: Path) -> dict[str, str]:
@@ -65,6 +63,7 @@ def config() -> None:
 @config.command("set")
 @click.argument("key")
 @click.argument("value")
+@global_options()
 @click.pass_context
 def set_cmd(ctx: click.Context, key: str, value: str) -> None:
     """Set a configuration key to a given value.
@@ -76,14 +75,20 @@ def set_cmd(ctx: click.Context, key: str, value: str) -> None:
         data = _load_config_dict(path)
         data[key] = value
         _save_config_dict(path, data)
-        console.print(f"[green]✓[/green] Set [bold cyan]{key}[/bold cyan] to [bold]{value}[/bold] in {path}")
+        ctx.obj.out.result(
+            success=True, 
+            key=key, 
+            value=value, 
+            msg=f"[green]✓[/green] Set [bold cyan]{key}[/bold cyan] to [bold]{value}[/bold] in {path}"
+        )
     except ConfigError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        ctx.obj.out.result(success=False, error=str(e))
         sys.exit(1)
 
 
 @config.command("get")
 @click.argument("key")
+@global_options()
 @click.pass_context
 def get_cmd(ctx: click.Context, key: str) -> None:
     """Get the value of a configuration key.
@@ -94,16 +99,17 @@ def get_cmd(ctx: click.Context, key: str) -> None:
     try:
         data = _load_config_dict(path)
         if key in data:
-            console.print(data[key])
+            ctx.obj.out.result(success=True, key=key, value=data[key], msg=data[key])
         else:
-            console.print(f"[yellow]Key '{key}' not found in {path}.[/yellow]")
+            ctx.obj.out.result(success=False, error=f"Key '{key}' not found", msg=f"[yellow]Key '{key}' not found in {path}.[/yellow]")
             sys.exit(1)
     except ConfigError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        ctx.obj.out.result(success=False, error=str(e))
         sys.exit(1)
 
 
 @config.command("list")
+@global_options()
 @click.pass_context
 def list_cmd(ctx: click.Context) -> None:
     """List all configuration keys and values.
@@ -113,12 +119,16 @@ def list_cmd(ctx: click.Context) -> None:
     path = ctx.obj.config_path or PdoConfig().config_file_path
     try:
         data = _load_config_dict(path)
+        if ctx.obj.json_output:
+            ctx.obj.out.result(success=True, config=data)
+            return
+            
         if not data:
-            console.print(f"[yellow]No configuration found in {path}.[/yellow]")
+            ctx.obj.out.print(f"[yellow]No configuration found in {path}.[/yellow]")
             return
             
         for k in sorted(data.keys()):
-            console.print(f"{k} = {data[k]}")
+            ctx.obj.out.print(f"{k} = {data[k]}")
     except ConfigError as e:
-        console.print(f"[red]Error:[/red] {e}")
+        ctx.obj.out.result(success=False, error=str(e))
         sys.exit(1)

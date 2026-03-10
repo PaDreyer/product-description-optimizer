@@ -12,28 +12,31 @@ All steps done: project structure, `pyproject.toml`, `config.py`, `exceptions.py
 
 ### Phase 2 — Database Layer (`/database`) ✅
 `src/pdo/core/db.py` and `tests/test_db.py` implemented.
-Includes extra `column_mappings` table for configurable CSV field mapping
-(user specifies which CSV columns map to product_id, description, and context fields).
-29 tests pass, ruff clean. **Pending git commit.**
+Includes extra `column_mappings` table for configurable CSV field mapping.
+29 tests pass, ruff clean. Committed.
+
+### Phase 3 — Core Pipeline (`/core-pipeline`) ✅
+All three pipeline modules implemented and tested:
+- `src/pdo/core/importer.py` — configurable column mappings, `;` delimiter, UTF-8/CP1252 fallback
+- `src/pdo/core/optimizer.py` — ABC + DummyOptimizer, pause/stop events, per-product commits
+- `src/pdo/core/exporter.py` — reconstructs CSV with optimized_description + status columns
+33 new tests (62 total), ruff clean. Committed.
 
 ## Current Phase
 
-### Phase 3 — Core Pipeline (`/core-pipeline`)
+### Phase 4 — Daemon & IPC (`/daemon`)
 **Status**: Not started
-**Next action**: Build `src/pdo/core/importer.py` following `/core-pipeline` workflow.
+**Next action**: Build `src/pdo/protocol/messages.py` following the `/daemon` workflow.
 
-Key design note for the **importer**: The CSV uses `;` as delimiter and has many
-columns (60+). Users must specify column mappings at import time:
-- `--id-col` for the product ID column (e.g. `"ProduktID"`)
-- `--description-col` for the description column (e.g. `"Beschreibung"`)
-- `--context-cols` for additional context columns to feed the optimizer
-  (e.g. `"Marke,Titel,Merkmal 1,Attribut 1,Merkmal 2,Attribut 2,..."`)
-
-The mappings are stored in the `column_mappings` table in the database.
+Build order:
+1. IPC protocol messages (`src/pdo/protocol/messages.py`)
+2. PID management (`src/pdo/daemon/pid.py`)
+3. Worker engine (`src/pdo/daemon/worker.py`)
+4. Socket server (`src/pdo/daemon/server.py`)
+5. Tests for all
 
 ## Remaining Phases
 
-- Phase 4 — Daemon & IPC (`/daemon`)
 - Phase 5 — CLI Commands (`/cli`)
 - Phase 6 — Integration Tests (`/integration`)
 

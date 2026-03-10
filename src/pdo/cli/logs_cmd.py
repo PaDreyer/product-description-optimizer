@@ -9,6 +9,7 @@ import click
 from rich.console import Console
 
 from pdo.config import load_config
+from pdo.daemon.pid import is_daemon_running
 
 console = Console()
 
@@ -25,7 +26,11 @@ def logs(*, follow: bool, lines: int) -> None:
     log_file = config.log_dir / "daemon.log"
 
     if not log_file.is_file():
-        console.print("[yellow]No log file found.[/yellow] Has the daemon been started?")
+        pid_path = config.data_dir / "daemon.pid"
+        if is_daemon_running(pid_path):
+            console.print("[yellow]No log file found yet[/yellow] — nothing has been logged.")
+        else:
+            console.print("[yellow]No log file found.[/yellow] Has the daemon been started?")
         return
 
     _print_tail(log_file, lines)

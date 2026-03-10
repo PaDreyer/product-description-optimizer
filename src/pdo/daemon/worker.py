@@ -14,7 +14,7 @@ from typing import Any
 from pdo.core.db import Database
 from pdo.core.exporter import export_csv
 from pdo.core.importer import ColumnMapping, import_csv
-from pdo.core.optimizer import DummyOptimizer, run_optimization
+from pdo.core.optimizer import DummyOptimizer, Optimizer, run_optimization
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +83,9 @@ class Worker:
     def start_optimization(self) -> bool:
         """Run the optimizer in a worker thread.
 
+        Automatically uses :class:`GeminiOptimizer` if ``GEMINI_API_KEY`` is
+        set, otherwise falls back to :class:`DummyOptimizer`.
+
         Returns *True* if started, *False* if already busy.
         """
         if self.is_busy:
@@ -91,11 +94,13 @@ class Worker:
         self._pause_event.clear()
         self._stop_event.clear()
 
+        optimizer = self._create_optimizer()
+
         def _run() -> None:
             try:
                 result = run_optimization(
                     self._db,
-                    DummyOptimizer(),
+                    optimizer,
                     pause_event=self._pause_event,
                     stop_event=self._stop_event,
                 )
@@ -110,6 +115,30 @@ class Worker:
                 log.exception("Optimization failed")
 
         return self._start_thread(_run, "optimize")
+
+    def _create_optimizer(self) -> Optimizer:
+        """Create the best available optimizer.
+
+        Returns a :class:`GeminiOptimizer` if ``GEMINI_API_KEY`` is set,
+        otherwise a :class:`DummyOptimizer`.
+        """
+        import os
+
+        api_key = os.environ.get("GEMINI_API_KEY", "")
+        if api_key:
+            try:
+                from pdo.core.gemini_optimizer import GeminiOptimizer
+
+                log.info("Using GeminiOptimizer (model: gemini-2.0-flash)")
+                return GeminiOptimizer(api_key=api_key)
+            except ImportError:
+                log.warning(
+                    "google-genai not installed. Install with: "
+                    "pip install 'pdo[gemini]'. Falling back to DummyOptimizer."
+                )
+        else:
+            log.info("GEMINI_API_KEY not set — using DummyOptimizer")
+        return DummyOptimizer()
 
     def start_export(
         self,

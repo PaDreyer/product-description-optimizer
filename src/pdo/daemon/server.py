@@ -166,8 +166,11 @@ class DaemonServer:
 
         if request.client_version != __version__:
             return Response(
-                success=False, 
-                error=f"Version mismatch: CLI client is v{request.client_version}, but daemon is v{__version__}."
+                success=False,
+                error=(
+                    f"Version mismatch: CLI client is v{request.client_version}, "
+                    f"but daemon is v{__version__}."
+                ),
             )
 
         handlers: dict[str, Any] = {
@@ -201,9 +204,7 @@ class DaemonServer:
             return Response(success=False, error="Missing 'csv_path' in payload")
         column_mappings = payload.get("column_mappings", [])
         delimiter = payload.get("delimiter", ";")
-        started = self._worker.start_import(
-            Path(csv_path), column_mappings, delimiter=delimiter
-        )
+        started = self._worker.start_import(Path(csv_path), column_mappings, delimiter=delimiter)
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Import started"})
@@ -212,9 +213,7 @@ class DaemonServer:
         assert self._worker is not None
         optimizer_name = payload.get("optimizer")
         api_key = payload.get("api_key")
-        started = self._worker.start_optimization(
-            optimizer_name=optimizer_name, api_key=api_key
-        )
+        started = self._worker.start_optimization(optimizer_name=optimizer_name, api_key=api_key)
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Optimization started"})
@@ -225,9 +224,7 @@ class DaemonServer:
         if not output_path:
             return Response(success=False, error="Missing 'output_path' in payload")
         include_errors = payload.get("include_errors", False)
-        started = self._worker.start_export(
-            Path(output_path), include_errors=include_errors
-        )
+        started = self._worker.start_export(Path(output_path), include_errors=include_errors)
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Export started"})

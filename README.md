@@ -39,11 +39,16 @@ pdo export optimized_output.csv
 
 | Command                  | Description                                  |
 |--------------------------|----------------------------------------------|
+| `pdo config set <k> <v>` | Set a configuration key to a given value     |
+| `pdo config get <key>`   | Get the value of a configuration key         |
+| `pdo config list`        | List all configuration keys and values       |
 | `pdo daemon start`       | Start the background daemon                  |
 | `pdo daemon stop`        | Stop the daemon                              |
 | `pdo daemon status`      | Check if the daemon is running               |
+| `pdo daemon repair`      | Repair unresponsive daemon (clean PID/socket)|
 | `pdo import <file>`      | Import products from a CSV file              |
 | `pdo optimize [--watch]` | Start optimization (optionally watch progress) |
+| `pdo optimizer list`     | List available optimizer backends            |
 | `pdo export <file>`      | Export results to CSV                        |
 | `pdo status`             | Show pipeline progress                       |
 | `pdo pause`              | Pause the current optimization               |
@@ -102,9 +107,9 @@ pdo import catalogue.csv \
 
 PDO uses layered configuration (highest priority first):
 
-1. CLI flags / arguments
+1. CLI flags / arguments (including global `--config <path>`)
 2. Environment variables (`PDO_` prefix)
-3. Config file (`~/.pdo/config.toml`)
+3. Config file (`~/.pdo/config.toml`, manage via `pdo config`)
 4. Built-in defaults
 
 **Key environment variables:**

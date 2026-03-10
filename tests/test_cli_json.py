@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+
 from click.testing import CliRunner
 
 from pdo.cli.main import cli
@@ -14,12 +15,14 @@ def test_status_json_output(tmp_path: Path):
     data = json.loads(result.output)
     assert "success" in data or "running" in data or "stage" in data
 
+
 def test_daemon_status_json_output(tmp_path: Path):
     runner = CliRunner()
     result = runner.invoke(cli, ["daemon", "status", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert "running" in data
+
 
 def test_optimizer_list_json_output(tmp_path: Path):
     runner = CliRunner()
@@ -29,12 +32,14 @@ def test_optimizer_list_json_output(tmp_path: Path):
     assert "optimizers" in data
     assert "default" in data
 
+
 def test_config_list_json_output(tmp_path: Path):
     runner = CliRunner()
     result = runner.invoke(cli, ["config", "list", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.output)
     assert "success" in data or "config" in data
+
 
 def test_logs_json_output_error(tmp_path: Path):
     runner = CliRunner()

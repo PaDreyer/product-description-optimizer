@@ -57,9 +57,8 @@ class TestCreateOptimizer:
             create_optimizer("nonexistent")
 
     def test_gemini_without_key_raises(self) -> None:
-        with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="API key"):
-                create_optimizer("gemini")
+        with patch.dict("os.environ", {}, clear=True), pytest.raises(ValueError, match="API key"):
+            create_optimizer("gemini")
 
     @patch.dict("sys.modules", {"pdo.core.gemini_optimizer": None})
     def test_gemini_without_sdk_raises(self) -> None:
@@ -78,4 +77,3 @@ class TestGetDefaultOptimizerName:
         """When both the SDK and key are present, default should be gemini."""
         with patch.dict("os.environ", {"GEMINI_API_KEY": "test-key"}):
             assert get_default_optimizer_name() == "gemini"
-

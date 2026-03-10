@@ -25,7 +25,9 @@ from pdo.cli.common import global_options
 )
 @global_options()
 @click.pass_context
-def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None, api_key: str | None) -> None:
+def optimize(
+    ctx: click.Context, *, watch: bool, optimizer_name: str | None, api_key: str | None
+) -> None:
     """Start optimizing imported products.
 
     Use --watch to see a live progress display until optimization completes.
@@ -42,9 +44,12 @@ def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None, api
         if optimizer_name not in known:
             err = f"Unknown optimizer: {optimizer_name}. Available: {', '.join(known)}"
             ctx.obj.out.result(
-                success=False, 
-                error=err, 
-                msg=f"[red]✗[/red] Unknown optimizer: [bold]{optimizer_name}[/bold]. Available: {', '.join(known)}"
+                success=False,
+                error=err,
+                msg=(
+                    f"[red]✗[/red] Unknown optimizer: [bold]{optimizer_name}[/bold]. "
+                    f"Available: {', '.join(known)}"
+                ),
             )
             raise SystemExit(1)
 
@@ -56,8 +61,10 @@ def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None, api
 
     try:
         resp = send_command("optimize", payload=payload or None)
-        ctx.obj.out.result(success=resp.success, error=resp.error, msg="[green]✓[/green] Optimization started")
-        
+        ctx.obj.out.result(
+            success=resp.success, error=resp.error, msg="[green]✓[/green] Optimization started"
+        )
+
         if not resp.success or ctx.obj.json_output:
             return
 
@@ -70,8 +77,10 @@ def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None, api
 
 def _watch_progress() -> None:
     """Poll the daemon for status updates until optimization finishes."""
-    from pdo.cli.client import send_command
     from rich.console import Console
+
+    from pdo.cli.client import send_command
+
     console = Console()
 
     with console.status("[bold cyan]Optimizing…[/bold cyan]") as status:
@@ -91,9 +100,7 @@ def _watch_progress() -> None:
 
             if total > 0:
                 pct = int(current / total * 100)
-                status.update(
-                    f"[bold cyan]Optimizing…[/bold cyan] {current}/{total} ({pct}%)"
-                )
+                status.update(f"[bold cyan]Optimizing…[/bold cyan] {current}/{total} ({pct}%)")
 
             stage = data.get("stage", "idle")
             busy = data.get("busy", False)

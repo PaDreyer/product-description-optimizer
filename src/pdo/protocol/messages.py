@@ -39,9 +39,9 @@ class Request:
         if "action" not in data:
             raise ProtocolError("Request missing 'action' field")
         return cls(
-            action=data["action"], 
+            action=data["action"],
             payload=data.get("payload", {}),
-            client_version=data.get("client_version", "unknown")
+            client_version=data.get("client_version", "unknown"),
         )
 
 

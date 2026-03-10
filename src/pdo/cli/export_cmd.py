@@ -5,7 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 
 import click
-from pathlib import Path
 
 from pdo.cli.common import global_options
 
@@ -27,18 +26,22 @@ def export(ctx: click.Context, output_file: Path, *, include_errors: bool) -> No
 
     try:
         from rich.console import Console
+
         console = Console()
         if not ctx.obj.json_output:
             with console.status("[bold cyan]Exporting…[/bold cyan]"):
                 resp = send_command("export", payload)
         else:
             resp = send_command("export", payload)
-            
+
         ctx.obj.out.result(
-            success=resp.success, 
+            success=resp.success,
             data=resp.data if resp.success else dict(),
-            error=resp.error, 
-            msg=f"[green]✓[/green] {resp.data.get('message', 'Export started') if resp.success else ''}"
+            error=resp.error,
+            msg=(
+                f"[green]✓[/green] "
+                f"{resp.data.get('message', 'Export started') if resp.success else ''}"
+            ),
         )
     except DaemonNotRunningError as exc:
         ctx.obj.out.result(success=False, error=str(exc))

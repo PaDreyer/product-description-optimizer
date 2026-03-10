@@ -104,8 +104,14 @@ class TestFullPipeline:
         products = db.get_all_products()
         raw = products[0]["raw_data"]
         for col in [
-            "ProduktID", "Titel", "Beschreibung", "Marke",
-            "Kategorie", "Preis", "Merkmal 1", "Attribut 1",
+            "ProduktID",
+            "Titel",
+            "Beschreibung",
+            "Marke",
+            "Kategorie",
+            "Preis",
+            "Merkmal 1",
+            "Attribut 1",
         ]:
             assert col in raw, f"Missing column {col} in raw_data"
 
@@ -166,9 +172,7 @@ class TestResumability:
             if current >= 5:
                 stop.set()  # Stop after 5
 
-        run_optimization(
-            db, DummyOptimizer(), on_progress=_progress, stop_event=stop
-        )
+        run_optimization(db, DummyOptimizer(), on_progress=_progress, stop_event=stop)
 
         # Some should be done, some still pending
         progress = db.get_progress()
@@ -194,9 +198,7 @@ class TestExportWithErrors:
         for p in products[:3]:
             db.update_product_status(p["id"], "error", error_message="test error")
         for p in products[3:]:
-            db.update_product_status(
-                p["id"], "done", optimized_description="optimized"
-            )
+            db.update_product_status(p["id"], "done", optimized_description="optimized")
 
         # Without errors
         out1 = tmp_path / "no_errors.csv"

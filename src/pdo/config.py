@@ -52,9 +52,7 @@ def _env_overrides() -> dict[str, str]:
     """
     prefix = "PDO_"
     return {
-        k.removeprefix(prefix).lower(): v
-        for k, v in os.environ.items()
-        if k.startswith(prefix)
+        k.removeprefix(prefix).lower(): v for k, v in os.environ.items() if k.startswith(prefix)
     }
 
 

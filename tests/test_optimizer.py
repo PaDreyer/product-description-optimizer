@@ -19,16 +19,18 @@ def db() -> Database:
 
 def _seed_products(db: Database, count: int = 5) -> None:
     """Insert *count* pending products into the database."""
-    db.insert_products([
-        {
-            "source_row_number": i + 1,
-            "raw_data": {"name": f"Product {i}"},
-            "product_id_value": f"P{i:04d}",
-            "original_description": f"Description for product {i}",
-            "context_data": {"Marke": f"Brand{i}", "Titel": f"Title {i}"},
-        }
-        for i in range(count)
-    ])
+    db.insert_products(
+        [
+            {
+                "source_row_number": i + 1,
+                "raw_data": {"name": f"Product {i}"},
+                "product_id_value": f"P{i:04d}",
+                "original_description": f"Description for product {i}",
+                "context_data": {"Marke": f"Brand{i}", "Titel": f"Title {i}"},
+            }
+            for i in range(count)
+        ]
+    )
 
 
 class TestDummyOptimizer:
@@ -43,9 +45,7 @@ class TestDummyOptimizer:
 
     def test_includes_context(self) -> None:
         opt = DummyOptimizer()
-        result = opt.optimize(
-            "P001", "desc", context={"Marke": "BrandX"}
-        )
+        result = opt.optimize("P001", "desc", context={"Marke": "BrandX"})
         assert "Marke=BrandX" in result
 
 
@@ -67,9 +67,7 @@ class TestRunOptimization:
     def test_progress_callback(self, db: Database) -> None:
         _seed_products(db, 3)
         calls: list[tuple[int, int]] = []
-        run_optimization(
-            db, DummyOptimizer(), on_progress=lambda c, t: calls.append((c, t))
-        )
+        run_optimization(db, DummyOptimizer(), on_progress=lambda c, t: calls.append((c, t)))
         assert len(calls) == 3
         assert calls[-1] == (3, 3)
 
@@ -95,12 +93,8 @@ class TestRunOptimization:
         _seed_products(db, 4)
         # Mark first two as done manually
         products = db.get_all_products()
-        db.update_product_status(
-            products[0]["id"], "done", optimized_description="already done"
-        )
-        db.update_product_status(
-            products[1]["id"], "done", optimized_description="already done"
-        )
+        db.update_product_status(products[0]["id"], "done", optimized_description="already done")
+        db.update_product_status(products[1]["id"], "done", optimized_description="already done")
         result = run_optimization(db, DummyOptimizer())
         # Should have processed 2 new + 2 already done
         assert result.succeeded == 4

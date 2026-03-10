@@ -8,6 +8,7 @@ import tempfile
 import threading
 import time
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -15,7 +16,6 @@ from pdo.core.db import Database
 from pdo.daemon.pid import is_daemon_running, read_pid, remove_pid, write_pid
 from pdo.daemon.worker import Worker
 from pdo.protocol.messages import Request, Response, receive_message, send_message
-from unittest.mock import patch
 
 # ── PID management ───────────────────────────────────────────────────
 
@@ -34,9 +34,7 @@ class TestPidManagement:
         pid_file.write_text("not-a-number")
         assert read_pid(pid_file) is None
 
-    def test_is_daemon_running_detects_current_process(
-        self, tmp_path: Path
-    ) -> None:
+    def test_is_daemon_running_detects_current_process(self, tmp_path: Path) -> None:
         pid_file = tmp_path / "test.pid"
         write_pid(pid_file)
         assert is_daemon_running(pid_file) is True
@@ -73,16 +71,18 @@ def db() -> Database:
 
 
 def _seed_products(db: Database, count: int = 3) -> None:
-    db.insert_products([
-        {
-            "source_row_number": i + 1,
-            "raw_data": {"name": f"Product {i}"},
-            "product_id_value": f"P{i:04d}",
-            "original_description": f"Description for product {i}",
-            "context_data": {"Marke": f"Brand{i}"},
-        }
-        for i in range(count)
-    ])
+    db.insert_products(
+        [
+            {
+                "source_row_number": i + 1,
+                "raw_data": {"name": f"Product {i}"},
+                "product_id_value": f"P{i:04d}",
+                "original_description": f"Description for product {i}",
+                "context_data": {"Marke": f"Brand{i}"},
+            }
+            for i in range(count)
+        ]
+    )
 
 
 class TestWorker:
@@ -252,10 +252,9 @@ class TestServerDispatch:
         daemon._worker = Worker(db)
 
         with patch.object(daemon._worker, "start_optimization", return_value=True) as mock_start:
-            resp = daemon._dispatch(Request(
-                action="optimize",
-                payload={"optimizer": "dummy", "api_key": "test_key"}
-            ))
+            resp = daemon._dispatch(
+                Request(action="optimize", payload={"optimizer": "dummy", "api_key": "test_key"})
+            )
 
         assert resp.success is True
         mock_start.assert_called_once_with(optimizer_name="dummy", api_key="test_key")

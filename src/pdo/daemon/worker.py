@@ -102,9 +102,7 @@ class Worker:
         self._pause_event.clear()
         self._stop_event.clear()
 
-        optimizer = self._create_optimizer(
-            optimizer_name=optimizer_name, api_key=api_key
-        )
+        optimizer = self._create_optimizer(optimizer_name=optimizer_name, api_key=api_key)
 
         def _run() -> None:
             try:
@@ -160,9 +158,7 @@ class Worker:
 
         def _run() -> None:
             try:
-                result = export_csv(
-                    self._db, output_path, include_errors=include_errors
-                )
+                result = export_csv(self._db, output_path, include_errors=include_errors)
                 self._last_result = {
                     "total_exported": result.total_exported,
                     "output_path": str(result.output_path),

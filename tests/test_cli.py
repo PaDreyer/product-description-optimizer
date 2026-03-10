@@ -30,8 +30,17 @@ class TestRootCli:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         expected = [
-            "daemon", "import", "optimize", "optimizer", "export",
-            "status", "pause", "resume", "reset", "logs", "version",
+            "daemon",
+            "import",
+            "optimize",
+            "optimizer",
+            "export",
+            "status",
+            "pause",
+            "resume",
+            "reset",
+            "logs",
+            "version",
         ]
         for cmd in expected:
             assert cmd in result.output
@@ -126,9 +135,7 @@ class TestImportCommand:
     def test_import_success(self, mock_cmd, runner: CliRunner, tmp_path: Path) -> None:
         csv_file = tmp_path / "test.csv"
         csv_file.write_text('"A";"B"\n"1";"2"\n')
-        mock_cmd.return_value = _mock_response(
-            success=True, data={"message": "Import started"}
-        )
+        mock_cmd.return_value = _mock_response(success=True, data={"message": "Import started"})
         result = runner.invoke(
             cli, ["import", str(csv_file), "-m", "description:A", "-m", "product_id:B"]
         )
@@ -161,7 +168,9 @@ class TestOptimizeCommand:
         )
         result = runner.invoke(cli, ["optimize", "--optimizer", "dummy", "--api-key", "secret"])
         assert result.exit_code == 0
-        mock_cmd.assert_called_once_with("optimize", payload={"optimizer": "dummy", "api_key": "secret"})
+        mock_cmd.assert_called_once_with(
+            "optimize", payload={"optimizer": "dummy", "api_key": "secret"}
+        )
 
     def test_optimize_unknown_backend(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["optimize", "--optimizer", "doesnotexist"])
@@ -175,7 +184,9 @@ class TestOptimizeCommand:
         assert result.exit_code == 0
         assert "busy" in result.output.lower()
 
+
 # ── Optimizer Command ────────────────────────────────────────────────
+
 
 class TestOptimizerCommand:
     def test_optimizer_list(self, runner: CliRunner) -> None:
@@ -193,9 +204,7 @@ class TestExportCommand:
     @patch("pdo.cli.client.send_command")
     def test_export_success(self, mock_cmd, runner: CliRunner, tmp_path: Path) -> None:
         out = tmp_path / "out.csv"
-        mock_cmd.return_value = _mock_response(
-            success=True, data={"message": "Export started"}
-        )
+        mock_cmd.return_value = _mock_response(success=True, data={"message": "Export started"})
         result = runner.invoke(cli, ["export", str(out)])
         assert result.exit_code == 0
         assert "Export started" in result.output

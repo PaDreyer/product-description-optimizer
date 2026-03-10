@@ -86,9 +86,7 @@ class TestValidationParsing:
         """JSON wrapped in ```json fences should still parse."""
         mock_client.models.generate_content.side_effect = [
             _make_response("Optimized."),
-            _make_response(
-                '```json\n{"approved": true, "issues": [], "suggestion": ""}\n```'
-            ),
+            _make_response('```json\n{"approved": true, "issues": [], "suggestion": ""}\n```'),
         ]
 
         opt = GeminiOptimizer(api_key="test-key")

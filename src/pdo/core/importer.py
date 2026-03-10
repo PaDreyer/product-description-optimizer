@@ -78,9 +78,7 @@ def import_csv(
     id_cols = [m for m in column_mappings if m.role == "product_id"]
     desc_cols = [m for m in column_mappings if m.role == "description"]
     if not desc_cols:
-        raise ImportDataError(
-            "At least one column mapping with role 'description' is required."
-        )
+        raise ImportDataError("At least one column mapping with role 'description' is required.")
 
     # --- Parse CSV ---------------------------------------------------------
     reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
@@ -91,10 +89,12 @@ def import_csv(
     _validate_columns_exist(column_mappings, headers)
 
     # --- Persist column mappings ------------------------------------------
-    db.set_column_mappings([
-        {"role": m.role, "csv_column_name": m.csv_column_name, "display_name": m.display_name}
-        for m in column_mappings
-    ])
+    db.set_column_mappings(
+        [
+            {"role": m.role, "csv_column_name": m.csv_column_name, "display_name": m.display_name}
+            for m in column_mappings
+        ]
+    )
 
     # --- Set pipeline state -----------------------------------------------
     db.set_pipeline_state("importing", source_file=str(csv_path))
@@ -161,9 +161,7 @@ def _validate_columns_exist(
     header_set = set(headers)
     missing = [m.csv_column_name for m in mappings if m.csv_column_name not in header_set]
     if missing:
-        raise ImportDataError(
-            f"CSV is missing the following mapped columns: {', '.join(missing)}"
-        )
+        raise ImportDataError(f"CSV is missing the following mapped columns: {', '.join(missing)}")
 
 
 def _build_product_dict(
@@ -175,9 +173,9 @@ def _build_product_dict(
     context_mappings: list[ColumnMapping],
 ) -> dict[str, Any]:
     """Transform a single CSV row dict into the shape expected by ``db.insert_products``."""
-    product_id_value = " | ".join(
-        row.get(m.csv_column_name, "") for m in id_cols
-    ) if id_cols else ""
+    product_id_value = (
+        " | ".join(row.get(m.csv_column_name, "") for m in id_cols) if id_cols else ""
+    )
 
     description_parts = [row.get(m.csv_column_name, "") for m in desc_cols]
     original_description = "\n\n".join(part for part in description_parts if part)

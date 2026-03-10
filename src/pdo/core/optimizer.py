@@ -122,14 +122,10 @@ def run_optimization(
                 description=product.get("original_description", ""),
                 context=product.get("context_data"),
             )
-            db.update_product_status(
-                product["id"], "done", optimized_description=optimized
-            )
+            db.update_product_status(product["id"], "done", optimized_description=optimized)
             succeeded += 1
         except Exception as exc:
-            db.update_product_status(
-                product["id"], "error", error_message=str(exc)
-            )
+            db.update_product_status(product["id"], "error", error_message=str(exc))
             failed += 1
 
         current += 1

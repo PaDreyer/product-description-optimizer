@@ -9,7 +9,6 @@ from __future__ import annotations
 import socket
 from typing import Any
 
-from pdo import __version__
 from pdo.config import PdoConfig, load_config
 from pdo.exceptions import DaemonNotRunningError, ProtocolError
 from pdo.protocol.messages import (

@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import click
 from rich.console import Console
 
 console = Console()
+
 
 class OutputManager:
     """Handles routing output as either human-readable rich text or raw JSON payloads."""
@@ -41,7 +43,7 @@ class OutputManager:
         **kwargs: Any,
     ) -> None:
         """Standardize the final command result payload and printing.
-        
+
         If json_output is True, emits a combined payload.
         If json_output is False, prints the `msg` (for success) or `error` (for failure).
         """
@@ -77,12 +79,14 @@ class _CliContext:
     def json_output(self, value: bool) -> None:
         self.out.json_output = value
 
+
 def set_json(ctx: click.Context, param: click.Parameter, value: bool) -> bool:
     """Click callback to set the JSON output flag globally."""
     if value:
         ctx.ensure_object(_CliContext)
         ctx.obj.json_output = True
     return value
+
 
 def set_verbose(ctx: click.Context, param: click.Parameter, value: bool) -> bool:
     """Click callback to set the verbose flag globally."""
@@ -91,10 +95,12 @@ def set_verbose(ctx: click.Context, param: click.Parameter, value: bool) -> bool
         ctx.obj.verbose = True
     return value
 
+
 def global_options() -> Callable[[click.Command], click.Command]:
     """Decorator to add global options (like --json, --verbose) to any command
     without requiring them in the function signature.
     """
+
     def decorator(f: click.Command) -> click.Command:
         f = click.option(
             "--json",
@@ -102,15 +108,17 @@ def global_options() -> Callable[[click.Command], click.Command]:
             expose_value=False,
             callback=set_json,
             is_eager=True,
-            help="Emit machine-readable JSON output."
+            help="Emit machine-readable JSON output.",
         )(f)
         f = click.option(
-            "--verbose", "-v",
+            "--verbose",
+            "-v",
             is_flag=True,
             expose_value=False,
             callback=set_verbose,
             is_eager=True,
-            help="Enable verbose / debug output."
+            help="Enable verbose / debug output.",
         )(f)
         return f
+
     return decorator

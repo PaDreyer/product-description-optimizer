@@ -140,10 +140,7 @@ class TestImportSpecialCases:
         assert "Ölfarbe" in products[0]["original_description"]
 
     def test_empty_description(self, db: Database, tmp_path: Path) -> None:
-        csv_content = (
-            '"ProduktID";"Beschreibung"\n'
-            '"P001";""\n'
-        )
+        csv_content = '"ProduktID";"Beschreibung"\n"P001";""\n'
         csv_file = _write_csv(tmp_path / "empty_desc.csv", csv_content)
         mappings = [
             ColumnMapping(role="description", csv_column_name="Beschreibung"),
@@ -153,9 +150,7 @@ class TestImportSpecialCases:
         product = db.get_all_products()[0]
         assert product["original_description"] == ""
 
-    def test_pipeline_state_returns_to_idle(
-        self, db: Database, tmp_path: Path
-    ) -> None:
+    def test_pipeline_state_returns_to_idle(self, db: Database, tmp_path: Path) -> None:
         csv_file = _write_csv(tmp_path / "products.csv", BASIC_CSV)
         import_csv(db, csv_file, column_mappings=BASIC_MAPPINGS)
         state = db.get_pipeline_state()

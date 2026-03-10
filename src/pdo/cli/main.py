@@ -6,11 +6,11 @@ This module defines the top-level Click group and the global options
 
 from __future__ import annotations
 
-import click
 from pathlib import Path
 
-from pdo import __version__
+import click
 
+from pdo import __version__
 from pdo.cli.common import _CliContext, global_options
 
 
@@ -53,12 +53,12 @@ def version(ctx: click.Context) -> None:
             # server usually contains the version.
             if "Version mismatch" in (resp.error or ""):
                 # E.g. "Version mismatch: CLI client is v0.1.0, but daemon is v0.2.0"
-                # We can just let the error surface or extract it, 
+                # We can just let the error surface or extract it,
                 # but let's be explicit.
                 daemon_version = "mismatch"
     except DaemonNotRunningError:
         daemon_version = "not running"
-        
+
     if ctx.obj.json_output:
         ctx.obj.out.emit_json({"client_version": __version__, "server_version": daemon_version})
         return
@@ -67,7 +67,9 @@ def version(ctx: click.Context) -> None:
     if daemon_version == "not running":
         ctx.obj.out.print("Daemon version: [dim]not running[/dim]")
     elif daemon_version == "mismatch":
-        ctx.obj.out.print("Daemon version: [bold red]version mismatch (check logs/restart)[/bold red]")
+        ctx.obj.out.print(
+            "Daemon version: [bold red]version mismatch (check logs/restart)[/bold red]"
+        )
     else:
         ctx.obj.out.print(f"Daemon version: [bold green]{daemon_version}[/bold green]")
 
@@ -90,7 +92,7 @@ def status(ctx: click.Context) -> None:
         if ctx.obj.json_output:
             ctx.obj.out.emit_json(data)
             return
-            
+
         stage = data.get("stage", "unknown")
         progress = data.get("progress", {})
         total = progress.get("total", 0)
@@ -99,8 +101,11 @@ def status(ctx: click.Context) -> None:
         pending = progress.get("pending", 0)
 
         stage_colors = {
-            "idle": "dim", "importing": "cyan", "optimizing": "yellow",
-            "exporting": "blue", "done": "green",
+            "idle": "dim",
+            "importing": "cyan",
+            "optimizing": "yellow",
+            "exporting": "blue",
+            "done": "green",
         }
         color = stage_colors.get(stage, "white")
 
@@ -159,25 +164,28 @@ def reset(ctx: click.Context, *, yes: bool) -> None:
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
-    if not yes and not ctx.obj.json_output and not click.confirm(
-        "This will stop any running operation and delete all data. Continue?"
+    if (
+        not yes
+        and not ctx.obj.json_output
+        and not click.confirm("This will stop any running operation and delete all data. Continue?")
     ):
         ctx.obj.out.print("[dim]Aborted.[/dim]")
         return
 
     try:
         from rich.console import Console
+
         console = Console()
         if not ctx.obj.json_output:
             with console.status("[bold cyan]Resetting…[/bold cyan]"):
                 resp = send_command("reset")
         else:
             resp = send_command("reset")
-            
+
         ctx.obj.out.result(
-            success=resp.success, 
-            error=resp.error, 
-            msg="[green]✓[/green] All operations stopped, database reset"
+            success=resp.success,
+            error=resp.error,
+            msg="[green]✓[/green] All operations stopped, database reset",
         )
     except DaemonNotRunningError as exc:
         ctx.obj.out.result(success=False, error=str(exc))
@@ -185,13 +193,13 @@ def reset(ctx: click.Context, *, yes: bool) -> None:
 
 # ── Register subcommand groups and commands ──────────────────────────
 
+from pdo.cli.config_cmd import config  # noqa: E402
 from pdo.cli.daemon_cmd import daemon  # noqa: E402
 from pdo.cli.export_cmd import export  # noqa: E402
 from pdo.cli.import_cmd import import_cmd  # noqa: E402
 from pdo.cli.logs_cmd import logs  # noqa: E402
 from pdo.cli.optimize_cmd import optimize  # noqa: E402
 from pdo.cli.optimizer_cmd import optimizer  # noqa: E402
-from pdo.cli.config_cmd import config  # noqa: E402
 
 cli.add_command(daemon)
 cli.add_command(import_cmd)

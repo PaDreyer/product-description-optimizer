@@ -128,9 +128,7 @@ class TestUpdateProductStatus:
         db.insert_products(_sample_products(1))
         product = db.get_next_pending()
         db.update_product_status(product["id"], "processing")
-        db.update_product_status(
-            product["id"], "error", error_message="API timeout"
-        )
+        db.update_product_status(product["id"], "error", error_message="API timeout")
         updated = db.get_all_products()[0]
         assert updated["status"] == "error"
         assert updated["error_message"] == "API timeout"
@@ -154,12 +152,8 @@ class TestGetProgress:
         db.insert_products(_sample_products(4))
         products = db.get_all_products()
         db.update_product_status(products[0]["id"], "processing")
-        db.update_product_status(
-            products[1]["id"], "done", optimized_description="ok"
-        )
-        db.update_product_status(
-            products[2]["id"], "error", error_message="fail"
-        )
+        db.update_product_status(products[1]["id"], "done", optimized_description="ok")
+        db.update_product_status(products[2]["id"], "error", error_message="fail")
         progress = db.get_progress()
         assert progress["total"] == 4
         assert progress["pending"] == 1
@@ -175,9 +169,7 @@ class TestGetAllProducts:
     def test_filter_by_status(self, db: Database) -> None:
         db.insert_products(_sample_products(3))
         products = db.get_all_products()
-        db.update_product_status(
-            products[0]["id"], "done", optimized_description="ok"
-        )
+        db.update_product_status(products[0]["id"], "done", optimized_description="ok")
         done = db.get_all_products(status="done")
         assert len(done) == 1
         assert done[0]["status"] == "done"
@@ -196,9 +188,7 @@ class TestPipelineState:
         assert state["stage"] == "idle"
 
     def test_set_and_get_state(self, db: Database) -> None:
-        db.set_pipeline_state(
-            "importing", total_products=42, source_file="products.csv"
-        )
+        db.set_pipeline_state("importing", total_products=42, source_file="products.csv")
         state = db.get_pipeline_state()
         assert state["stage"] == "importing"
         assert state["total_products"] == 42
@@ -236,20 +226,26 @@ class TestColumnMappings:
         assert result[0]["csv_column_name"] == "ProduktID"
 
     def test_set_replaces_previous_mappings(self, db: Database) -> None:
-        db.set_column_mappings([
-            {"role": "product_id", "csv_column_name": "ID"},
-        ])
-        db.set_column_mappings([
-            {"role": "description", "csv_column_name": "Desc"},
-        ])
+        db.set_column_mappings(
+            [
+                {"role": "product_id", "csv_column_name": "ID"},
+            ]
+        )
+        db.set_column_mappings(
+            [
+                {"role": "description", "csv_column_name": "Desc"},
+            ]
+        )
         result = db.get_column_mappings()
         assert len(result) == 1
         assert result[0]["role"] == "description"
 
     def test_display_name_defaults_to_csv_column_name(self, db: Database) -> None:
-        db.set_column_mappings([
-            {"role": "context", "csv_column_name": "Merkmal 1"},
-        ])
+        db.set_column_mappings(
+            [
+                {"role": "context", "csv_column_name": "Merkmal 1"},
+            ]
+        )
         result = db.get_column_mappings()
         assert result[0]["display_name"] == "Merkmal 1"
 
@@ -272,9 +268,11 @@ class TestReset:
         assert state["total_products"] == 0
 
     def test_reset_clears_column_mappings(self, db: Database) -> None:
-        db.set_column_mappings([
-            {"role": "product_id", "csv_column_name": "ID"},
-        ])
+        db.set_column_mappings(
+            [
+                {"role": "product_id", "csv_column_name": "ID"},
+            ]
+        )
         db.reset()
         assert db.get_column_mappings() == []
 

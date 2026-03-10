@@ -8,6 +8,7 @@ import click
 
 from pdo.cli.common import global_options
 
+
 @click.command("import")
 @click.argument("file", type=click.Path(exists=True, path_type=Path))
 @click.option(
@@ -61,18 +62,22 @@ def import_cmd(ctx: click.Context, file: Path, mapping: tuple[str, ...], delimit
 
     try:
         from rich.console import Console
+
         console = Console()
         if not ctx.obj.json_output:
             with console.status("[bold cyan]Importing…[/bold cyan]"):
                 resp = send_command("import", payload)
         else:
             resp = send_command("import", payload)
-            
+
         ctx.obj.out.result(
-            success=resp.success, 
+            success=resp.success,
             data=resp.data if resp.success else dict(),
-            error=resp.error, 
-            msg=f"[green]✓[/green] {resp.data.get('message', 'Import started') if resp.success else ''}"
+            error=resp.error,
+            msg=(
+                f"[green]✓[/green] "
+                f"{resp.data.get('message', 'Import started') if resp.success else ''}"
+            ),
         )
     except DaemonNotRunningError as exc:
         ctx.obj.out.result(success=False, error=str(exc))

@@ -150,9 +150,11 @@ from pdo.cli.export_cmd import export  # noqa: E402
 from pdo.cli.import_cmd import import_cmd  # noqa: E402
 from pdo.cli.logs_cmd import logs  # noqa: E402
 from pdo.cli.optimize_cmd import optimize  # noqa: E402
+from pdo.cli.optimizer_cmd import optimizer  # noqa: E402
 
 cli.add_command(daemon)
 cli.add_command(import_cmd)
 cli.add_command(optimize)
+cli.add_command(optimizer)
 cli.add_command(export)
 cli.add_command(logs)

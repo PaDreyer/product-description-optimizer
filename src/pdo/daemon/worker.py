@@ -14,7 +14,8 @@ from typing import Any
 from pdo.core.db import Database
 from pdo.core.exporter import export_csv
 from pdo.core.importer import ColumnMapping, import_csv
-from pdo.core.optimizer import DummyOptimizer, Optimizer, run_optimization
+from pdo.core.optimizer import Optimizer, run_optimization
+from pdo.core.registry import create_optimizer, get_default_optimizer_name
 
 log = logging.getLogger(__name__)
 
@@ -80,11 +81,18 @@ class Worker:
 
         return self._start_thread(_run, "import")
 
-    def start_optimization(self) -> bool:
+    def start_optimization(
+        self,
+        *,
+        optimizer_name: str | None = None,
+        api_key: str | None = None,
+    ) -> bool:
         """Run the optimizer in a worker thread.
 
-        Automatically uses :class:`GeminiOptimizer` if ``GEMINI_API_KEY`` is
-        set, otherwise falls back to :class:`DummyOptimizer`.
+        Args:
+            optimizer_name: Explicit optimizer backend name. When *None*,
+                auto-detects the best available backend.
+            api_key: Optional API key passed through to the optimizer.
 
         Returns *True* if started, *False* if already busy.
         """
@@ -94,7 +102,9 @@ class Worker:
         self._pause_event.clear()
         self._stop_event.clear()
 
-        optimizer = self._create_optimizer()
+        optimizer = self._create_optimizer(
+            optimizer_name=optimizer_name, api_key=api_key
+        )
 
         def _run() -> None:
             try:
@@ -116,29 +126,24 @@ class Worker:
 
         return self._start_thread(_run, "optimize")
 
-    def _create_optimizer(self) -> Optimizer:
-        """Create the best available optimizer.
+    def _create_optimizer(
+        self,
+        *,
+        optimizer_name: str | None = None,
+        api_key: str | None = None,
+    ) -> Optimizer:
+        """Create an optimizer using the registry.
 
-        Returns a :class:`GeminiOptimizer` if ``GEMINI_API_KEY`` is set,
-        otherwise a :class:`DummyOptimizer`.
+        Falls back to auto-detection when *optimizer_name* is not given.
         """
-        import os
+        name = optimizer_name or get_default_optimizer_name()
 
-        api_key = os.environ.get("GEMINI_API_KEY", "")
+        kwargs = {}
         if api_key:
-            try:
-                from pdo.core.gemini_optimizer import GeminiOptimizer
+            kwargs["api_key"] = api_key
 
-                log.info("Using GeminiOptimizer (model: gemini-2.0-flash)")
-                return GeminiOptimizer(api_key=api_key)
-            except ImportError:
-                log.warning(
-                    "google-genai not installed. Install with: "
-                    "pip install 'pdo[gemini]'. Falling back to DummyOptimizer."
-                )
-        else:
-            log.info("GEMINI_API_KEY not set — using DummyOptimizer")
-        return DummyOptimizer()
+        log.info("Using optimizer: %s", name)
+        return create_optimizer(name, **kwargs)
 
     def start_export(
         self,

@@ -15,6 +15,7 @@ from pdo.core.db import Database
 from pdo.daemon.pid import is_daemon_running, read_pid, remove_pid, write_pid
 from pdo.daemon.worker import Worker
 from pdo.protocol.messages import Request, Response, receive_message, send_message
+from unittest.mock import patch
 
 # ── PID management ───────────────────────────────────────────────────
 
@@ -237,6 +238,27 @@ class TestServerDispatch:
         assert resp.success is True
         assert "stage" in resp.data
         assert "progress" in resp.data
+
+        db.close()
+
+    def test_optimize_action_with_payload(self, tmp_path: Path) -> None:
+        from pdo.daemon.server import DaemonServer
+
+        config = _test_config(tmp_path)
+        daemon = DaemonServer(config=config)
+        db = Database(":memory:")
+        db.initialize()
+        daemon._db = db
+        daemon._worker = Worker(db)
+
+        with patch.object(daemon._worker, "start_optimization", return_value=True) as mock_start:
+            resp = daemon._dispatch(Request(
+                action="optimize",
+                payload={"optimizer": "dummy", "api_key": "test_key"}
+            ))
+
+        assert resp.success is True
+        mock_start.assert_called_once_with(optimizer_name="dummy", api_key="test_key")
 
         db.close()
 

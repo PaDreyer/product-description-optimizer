@@ -30,7 +30,7 @@ class TestRootCli:
         result = runner.invoke(cli, ["--help"])
         assert result.exit_code == 0
         expected = [
-            "daemon", "import", "optimize", "export",
+            "daemon", "import", "optimize", "optimizer", "export",
             "status", "pause", "resume", "reset", "logs", "version",
         ]
         for cmd in expected:
@@ -123,6 +123,21 @@ class TestOptimizeCommand:
         result = runner.invoke(cli, ["optimize"])
         assert result.exit_code == 0
         assert "started" in result.output.lower()
+        mock_cmd.assert_called_once_with("optimize", payload=None)
+
+    @patch("pdo.cli.client.send_command")
+    def test_optimize_with_flags(self, mock_cmd, runner: CliRunner) -> None:
+        mock_cmd.return_value = _mock_response(
+            success=True, data={"message": "Optimization started"}
+        )
+        result = runner.invoke(cli, ["optimize", "--optimizer", "dummy", "--api-key", "secret"])
+        assert result.exit_code == 0
+        mock_cmd.assert_called_once_with("optimize", payload={"optimizer": "dummy", "api_key": "secret"})
+
+    def test_optimize_unknown_backend(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["optimize", "--optimizer", "doesnotexist"])
+        assert result.exit_code != 0
+        assert "Unknown optimizer" in result.output
 
     @patch("pdo.cli.client.send_command")
     def test_optimize_worker_busy(self, mock_cmd, runner: CliRunner) -> None:
@@ -130,6 +145,16 @@ class TestOptimizeCommand:
         result = runner.invoke(cli, ["optimize"])
         assert result.exit_code == 0
         assert "busy" in result.output.lower()
+
+# ── Optimizer Command ────────────────────────────────────────────────
+
+class TestOptimizerCommand:
+    def test_optimizer_list(self, runner: CliRunner) -> None:
+        result = runner.invoke(cli, ["optimizer", "list"])
+        assert result.exit_code == 0
+        assert "dummy" in result.output
+        assert "gemini" in result.output
+        assert "Active:" in result.output
 
 
 # ── Export Command ───────────────────────────────────────────────────

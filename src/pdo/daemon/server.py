@@ -203,7 +203,11 @@ class DaemonServer:
 
     def _handle_optimize(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
-        started = self._worker.start_optimization()
+        optimizer_name = payload.get("optimizer")
+        api_key = payload.get("api_key")
+        started = self._worker.start_optimization(
+            optimizer_name=optimizer_name, api_key=api_key
+        )
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Optimization started"})

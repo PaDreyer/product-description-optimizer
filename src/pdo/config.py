@@ -25,6 +25,8 @@ class PdoConfig:
     log_dir: Path = field(default_factory=lambda: _DEFAULT_BASE_DIR / "logs")
     socket_path: Path = field(default_factory=lambda: _DEFAULT_BASE_DIR / "pdo.sock")
     config_file_path: Path = field(default_factory=lambda: _DEFAULT_BASE_DIR / "config.toml")
+    optimizer: str = "auto"
+    gemini_api_key: str = ""
 
 
 def _read_config_file(path: Path) -> dict[str, str]:
@@ -92,4 +94,6 @@ def load_config(
             Path(merged["socket_path"]) if "socket_path" in merged else defaults.socket_path
         ),
         config_file_path=cfg_path,
+        optimizer=merged.get("optimizer", defaults.optimizer),
+        gemini_api_key=merged.get("gemini_api_key", defaults.gemini_api_key),
     )

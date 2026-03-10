@@ -9,6 +9,10 @@ class PdoError(Exception):
     """Base exception for all PDO errors."""
 
 
+class ConfigError(PdoError):
+    """Raised when there is an issue reading or writing the config file."""
+
+
 class DaemonNotRunningError(PdoError):
     """Raised when the CLI cannot connect to the daemon."""
 

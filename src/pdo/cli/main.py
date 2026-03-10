@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import click
 from rich.console import Console
+from pathlib import Path
 
 from pdo import __version__
 
@@ -20,18 +21,25 @@ class _CliContext:
     def __init__(self) -> None:
         self.json_output: bool = False
         self.verbose: bool = False
+        self.config_path: Path | None = None
 
 
 @click.group()
+@click.option(
+    "--config",
+    type=click.Path(dir_okay=False, path_type=Path),
+    help="Path to a custom config file.",
+)
 @click.option("--json", "json_output", is_flag=True, help="Emit machine-readable JSON output.")
 @click.option("--verbose", "-v", is_flag=True, help="Enable verbose / debug output.")
 @click.pass_context
-def cli(ctx: click.Context, *, json_output: bool, verbose: bool) -> None:
+def cli(ctx: click.Context, *, config: Path | None, json_output: bool, verbose: bool) -> None:
     """PDO — Product Description Optimizer.
 
     A daemon/client CLI for batch-optimizing product descriptions.
     """
     ctx.ensure_object(_CliContext)
+    ctx.obj.config_path = config
     ctx.obj.json_output = json_output
     ctx.obj.verbose = verbose
 
@@ -151,6 +159,7 @@ from pdo.cli.import_cmd import import_cmd  # noqa: E402
 from pdo.cli.logs_cmd import logs  # noqa: E402
 from pdo.cli.optimize_cmd import optimize  # noqa: E402
 from pdo.cli.optimizer_cmd import optimizer  # noqa: E402
+from pdo.cli.config_cmd import config  # noqa: E402
 
 cli.add_command(daemon)
 cli.add_command(import_cmd)
@@ -158,3 +167,4 @@ cli.add_command(optimize)
 cli.add_command(optimizer)
 cli.add_command(export)
 cli.add_command(logs)
+cli.add_command(config)

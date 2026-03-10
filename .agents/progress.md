@@ -27,25 +27,22 @@ Includes `column_mappings` table for configurable CSV field mapping.
 - `daemon/server.py` — Unix domain socket server, selectors I/O, dispatch table, daemonize
 27 new tests (89 total).
 
+### Phase 5 — CLI Commands (`/cli`) ✅
+- `cli/client.py` — IPC client helper (connect, send_command)
+- `cli/daemon_cmd.py` — start/stop/status
+- `cli/import_cmd.py` — `pdo import <file> -m ROLE:COLUMN`
+- `cli/optimize_cmd.py` — `pdo optimize [--watch]`
+- `cli/export_cmd.py` — `pdo export <output_file> [--include-errors]`
+- `cli/logs_cmd.py` — `pdo logs [-f] [-n N]`
+- `main.py` updated — status/pause/resume/reset commands, all subcommands registered
+20 new tests (109 total).
+
 ## Current Phase
 
-### Phase 5 — CLI Commands (`/cli`)
+### Phase 6 — Integration Tests (`/integration`)
 **Status**: Not started
-**Next action**: Build `src/pdo/cli/client.py` following the `/cli` workflow.
-
-Build order:
-1. IPC client helper (`src/pdo/cli/client.py`)
-2. Daemon commands (`src/pdo/cli/daemon_cmd.py`)
-3. Import command (`src/pdo/cli/import_cmd.py`)
-4. Optimize command (`src/pdo/cli/optimize_cmd.py`)
-5. Export command (`src/pdo/cli/export_cmd.py`)
-6. Status/control commands (in `main.py` or `control_cmd.py`)
-7. Logs command (`src/pdo/cli/logs_cmd.py`)
-8. Tests (`tests/test_cli.py`)
-
-## Remaining Phases
-
-- Phase 6 — Integration Tests (`/integration`)
+**Next action**: Build an end-to-end test (`tests/test_integration.py`) that exercises
+the full pipeline: CSV import → optimize → export via the daemon, verifying the output CSV.
 
 ## CSV Format Notes
 

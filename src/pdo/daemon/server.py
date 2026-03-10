@@ -238,8 +238,10 @@ class DaemonServer:
     def _handle_reset(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
         assert self._db is not None
+        # Gracefully stop any running operation first
         if self._worker.is_busy:
-            return Response(success=False, error="Cannot reset while worker is busy")
+            log.info("Stopping running operation before reset …")
+            self._worker.stop()
         self._db.reset()
         return Response(success=True, data={"message": "Database reset"})
 

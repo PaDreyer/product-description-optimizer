@@ -122,18 +122,21 @@ def resume() -> None:
 @cli.command()
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
 def reset(*, yes: bool) -> None:
-    """Reset the database (deletes all products and state)."""
+    """Reset the database — stops any running operation, then clears all data."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
-    if not yes and not click.confirm("This will delete all data. Continue?"):
+    if not yes and not click.confirm(
+        "This will stop any running operation and delete all data. Continue?"
+    ):
         console.print("[dim]Aborted.[/dim]")
         return
 
     try:
-        resp = send_command("reset")
+        with console.status("[bold cyan]Resetting…[/bold cyan]"):
+            resp = send_command("reset")
         if resp.success:
-            console.print("[green]✓[/green] Database reset")
+            console.print("[green]✓[/green] All operations stopped, database reset")
         else:
             console.print(f"[red]Error:[/red] {resp.error}")
     except DaemonNotRunningError as exc:

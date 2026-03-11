@@ -101,6 +101,18 @@ class DaemonServer:
         self._config.data_dir.mkdir(parents=True, exist_ok=True)
         self._config.log_dir.mkdir(parents=True, exist_ok=True)
 
+        # Configure logging
+        log_file = self._config.log_dir / "daemon.log"
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            handlers=[
+                logging.FileHandler(log_file),
+                logging.StreamHandler(sys.stdout)
+            ],
+            force=True
+        )
+
         # Write PID
         write_pid(self._pid_path)
 

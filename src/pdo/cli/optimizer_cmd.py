@@ -17,10 +17,12 @@ def optimizer() -> None:
 @click.pass_context
 def list_cmd(ctx: click.Context) -> None:
     """List available optimizer backends."""
+    from pdo.config import load_config
     from pdo.core.registry import get_default_optimizer_name, list_optimizers
 
-    optimizers = list_optimizers()
-    default = get_default_optimizer_name()
+    config = load_config(config_file=ctx.obj.config_path)
+    optimizers = list_optimizers(config)
+    default = get_default_optimizer_name(config)
 
     if ctx.obj.json_output:
         opts_data = [

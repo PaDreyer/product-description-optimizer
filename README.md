@@ -6,7 +6,7 @@ Import product data from CSV, optimize descriptions with Google Gemini, validate
 
 ## Features
 
-- **Two-step AI optimization** — Gemini rewrites descriptions, then validates them for false promises and hallucinated features
+- **Two-step AI optimization** — Gemini or Local LLMs rewrite descriptions, then validate them for false promises and hallucinated features
 - **Daemon architecture** — background process handles long-running operations while the CLI stays responsive
 - **Pause / resume / reset** — full control over the pipeline at any time
 - **Crash-resilient** — per-product commits mean you never lose progress
@@ -19,7 +19,7 @@ Import product data from CSV, optimize descriptions with Google Gemini, validate
 # Clone and install
 git clone <repo-url> && cd product_description_optimizer
 python -m venv venv && source venv/bin/activate
-pip install -e '.[gemini,dev]'
+pip install -e '.[gemini,openai,dev]'
 
 # Set your Gemini API key
 export GEMINI_API_KEY="your-key-here"
@@ -29,7 +29,7 @@ pdo daemon start --foreground
 
 # In another terminal:
 pdo import products.csv -m product_id:ProduktID -m description:Beschreibung -m context:Marke
-pdo optimize --watch
+pdo optimize --optimizer gemini --watch
 pdo export optimized_output.csv
 ```
 
@@ -96,7 +96,7 @@ pdo import catalogue.csv \
                           ┌────────┘  │  └────────┐
                           ▼           ▼            ▼
                      Importer    Optimizer     Exporter
-                       (CSV→DB)  (Gemini AI)   (DB→CSV)
+                       (CSV→DB) (Gemini/Local LLM) (DB→CSV)
                           │           │            │
                           └─────┬─────┘────────────┘
                                 ▼
@@ -116,16 +116,18 @@ PDO uses layered configuration (highest priority first):
 
 | Variable         | Default              | Description            |
 |------------------|----------------------|------------------------|
-| `GEMINI_API_KEY` | —                    | Google Gemini API key  |
-| `PDO_DATA_DIR`   | `~/.pdo/data`        | Database & PID storage |
-| `PDO_LOG_DIR`    | `~/.pdo/logs`        | Log file directory     |
-| `PDO_SOCKET_PATH`| `~/.pdo/pdo.sock`    | Daemon socket path     |
+| `GEMINI_API_KEY`        | —                           | Google Gemini API key            |
+| `PDO_LOCAL_LLM_ADDRESS` | `http://127.0.0.1:11434/v1` | Local OpenAI-compatible endpoint |
+| `PDO_LOCAL_LLM_MODEL`   | `local-model`               | Model name to pass to the server |
+| `PDO_DATA_DIR`          | `~/.pdo/data`               | Database & PID storage           |
+| `PDO_LOG_DIR`           | `~/.pdo/logs`               | Log file directory               |
+| `PDO_SOCKET_PATH`       | `~/.pdo/pdo.sock`           | Daemon socket path               |
 
 ## Development
 
 ```bash
 # Install dev dependencies
-pip install -e '.[gemini,dev]'
+pip install -e '.[gemini,openai,dev]'
 
 # Run tests
 make test              # all tests with coverage

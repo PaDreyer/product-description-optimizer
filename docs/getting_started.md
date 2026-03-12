@@ -5,7 +5,8 @@ This guide walks you through installing the Product Description Optimizer, setti
 ## Prerequisites
 
 - **Python 3.12+**
-- **Google Gemini API key** — get one at [aistudio.google.com](https://aistudio.google.com/apikey) (free with a Google account, included with Google AI Pro)
+- **Google Gemini API key** — get one at [aistudio.google.com](https://aistudio.google.com/apikey) OR
+- **Local LLM Server** (e.g., Ollama, LM Studio) running an OpenAI-compatible endpoint
 
 ## 1. Installation
 
@@ -20,7 +21,7 @@ source venv/bin/activate      # macOS / Linux
 # venv\Scripts\activate       # Windows
 
 # Install with Gemini support
-pip install -e '.[gemini,dev]'
+pip install -e '.[gemini,openai,dev]'
 ```
 
 Verify the installation:
@@ -33,6 +34,9 @@ pdo version
 
 ```bash
 export GEMINI_API_KEY="your-key-here"
+
+# OR for Local LLMs (e.g., Ollama):
+pdo config set local_llm_address http://127.0.0.1:11434/v1
 ```
 
 > **Tip:** Add this to your shell profile (`~/.bashrc`, `~/.zshrc`) so you don't have to set it every session.
@@ -100,11 +104,14 @@ pdo status
 Start the AI optimization:
 
 ```bash
-# Start and watch progress live
+# Start and watch progress live (uses gemini by default if key is set)
 pdo optimize --watch
+
+# Or use the local LLM optimizer:
+pdo optimize --optimizer local_llm --watch
 ```
 
-This shows a progress bar as Gemini processes each product. For each product, the optimizer:
+This shows a progress bar as the AI processes each product. For each product, the optimizer:
 
 1. **Generates** an optimized description based on the original text + context
 2. **Validates** the result — checking for false promises, hallucinated features, and inaccurate claims
@@ -169,7 +176,7 @@ pdo daemon stop
 | `Daemon is not running` | Run `pdo daemon start` first |
 | `Worker is busy` | Wait for current operation, or run `pdo reset --yes` |
 | `GEMINI_API_KEY not set` | Export the key: `export GEMINI_API_KEY="..."` |
-| `google-genai not installed` | Run `pip install -e '.[gemini]'` |
+| `google-genai not installed` | Run `pip install -e '.[gemini,openai]'` |
 | Optimization is slow | Normal — ~2–5s per product with two validation API calls |
 
 ## What's Next

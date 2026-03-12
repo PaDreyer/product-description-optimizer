@@ -166,10 +166,10 @@ class TestOptimizeCommand:
         mock_cmd.return_value = _mock_response(
             success=True, data={"message": "Optimization started"}
         )
-        result = runner.invoke(cli, ["optimize", "--optimizer", "dummy", "--api-key", "secret"])
+        result = runner.invoke(cli, ["optimize", "--optimizer", "dummy"])
         assert result.exit_code == 0
         mock_cmd.assert_called_once_with(
-            "optimize", payload={"optimizer": "dummy", "api_key": "secret"}
+            "optimize", payload={"optimizer": "dummy"}
         )
 
     def test_optimize_unknown_backend(self, runner: CliRunner) -> None:

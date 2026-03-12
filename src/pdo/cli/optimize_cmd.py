@@ -16,17 +16,12 @@ from pdo.cli.common import global_options
     "-o",
     "optimizer_name",
     default=None,
-    help="Optimizer backend to use (e.g. gemini, dummy). Default: auto-detect.",
-)
-@click.option(
-    "--api-key",
-    default=None,
-    help="API key for the optimizer (alternative to GEMINI_API_KEY env var).",
+    help="Explicitly choose backend (gemini, local_llm, dummy).",
 )
 @global_options()
 @click.pass_context
 def optimize(
-    ctx: click.Context, *, watch: bool, optimizer_name: str | None, api_key: str | None
+    ctx: click.Context, *, watch: bool, optimizer_name: str | None
 ) -> None:
     """Start optimizing imported products.
 
@@ -56,8 +51,6 @@ def optimize(
     payload: dict[str, str] = {}
     if optimizer_name:
         payload["optimizer"] = optimizer_name
-    if api_key:
-        payload["api_key"] = api_key
 
     try:
         resp = send_command("optimize", payload=payload or None)

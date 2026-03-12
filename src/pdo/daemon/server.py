@@ -122,7 +122,7 @@ class DaemonServer:
         self._db.initialize()
 
         # Worker
-        self._worker = Worker(self._db)
+        self._worker = Worker(self._db, self._config)
 
         # Socket
         self._socket_path.unlink(missing_ok=True)
@@ -224,8 +224,7 @@ class DaemonServer:
     def _handle_optimize(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
         optimizer_name = payload.get("optimizer")
-        api_key = payload.get("api_key")
-        started = self._worker.start_optimization(optimizer_name=optimizer_name, api_key=api_key)
+        started = self._worker.start_optimization(optimizer_name=optimizer_name)
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Optimization started"})

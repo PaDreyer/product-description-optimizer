@@ -12,6 +12,7 @@ from unittest.mock import patch
 
 import pytest
 
+from pdo.config import PdoConfig
 from pdo.core.db import Database
 from pdo.daemon.pid import is_daemon_running, read_pid, remove_pid, write_pid
 from pdo.daemon.worker import Worker
@@ -87,12 +88,12 @@ def _seed_products(db: Database, count: int = 3) -> None:
 
 class TestWorker:
     def test_not_busy_initially(self, db: Database) -> None:
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         assert worker.is_busy is False
 
     def test_start_optimization(self, db: Database) -> None:
         _seed_products(db, 3)
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         assert worker.start_optimization() is True
         # Wait for completion
         time.sleep(0.5)
@@ -102,7 +103,7 @@ class TestWorker:
 
     def test_reject_when_busy(self, db: Database) -> None:
         _seed_products(db, 100)
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         worker.start_optimization()
         # Should reject a second operation
         assert worker.start_optimization() is False
@@ -110,13 +111,13 @@ class TestWorker:
 
     def test_stop_event(self, db: Database) -> None:
         _seed_products(db, 50)
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         worker.start_optimization()
         worker.stop(timeout=2.0)
         assert worker.is_busy is False
 
     def test_get_status(self, db: Database) -> None:
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         status = worker.get_status()
         assert "busy" in status
         assert "stage" in status
@@ -124,7 +125,7 @@ class TestWorker:
 
     def test_pause_resume(self, db: Database) -> None:
         _seed_products(db, 5)
-        worker = Worker(db)
+        worker = Worker(db, PdoConfig())
         worker.start_optimization()
         worker.pause()
         status = worker.get_status()
@@ -169,7 +170,7 @@ class TestServerDispatch:
         db = Database(config.data_dir / "pdo.db")
         db.initialize()
         daemon._db = db
-        daemon._worker = Worker(db)
+        daemon._worker = Worker(db, config)
 
         # Create socket
         server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -216,7 +217,7 @@ class TestServerDispatch:
         db = Database(":memory:")
         db.initialize()
         daemon._db = db
-        daemon._worker = Worker(db)
+        daemon._worker = Worker(db, config)
 
         resp = daemon._dispatch(Request(action="nonexistent"))
         assert resp.success is False
@@ -232,7 +233,7 @@ class TestServerDispatch:
         db = Database(":memory:")
         db.initialize()
         daemon._db = db
-        daemon._worker = Worker(db)
+        daemon._worker = Worker(db, config)
 
         resp = daemon._dispatch(Request(action="status"))
         assert resp.success is True
@@ -249,15 +250,15 @@ class TestServerDispatch:
         db = Database(":memory:")
         db.initialize()
         daemon._db = db
-        daemon._worker = Worker(db)
+        daemon._worker = Worker(db, config)
 
         with patch.object(daemon._worker, "start_optimization", return_value=True) as mock_start:
             resp = daemon._dispatch(
-                Request(action="optimize", payload={"optimizer": "dummy", "api_key": "test_key"})
+                Request(action="optimize", payload={"optimizer": "dummy"})
             )
 
         assert resp.success is True
-        mock_start.assert_called_once_with(optimizer_name="dummy", api_key="test_key")
+        mock_start.assert_called_once_with(optimizer_name="dummy")
 
         db.close()
 

@@ -11,6 +11,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from pdo.config import PdoConfig
 from pdo.core.db import Database
 from pdo.core.exporter import export_csv
 from pdo.core.importer import ColumnMapping, import_csv
@@ -26,8 +27,9 @@ class Worker:
     Only one operation runs at a time — other requests are rejected while busy.
     """
 
-    def __init__(self, db: Database) -> None:
+    def __init__(self, db: Database, config: PdoConfig) -> None:
         self._db = db
+        self._config = config
         self._thread: threading.Thread | None = None
         self._pause_event = threading.Event()
         self._stop_event = threading.Event()
@@ -85,14 +87,12 @@ class Worker:
         self,
         *,
         optimizer_name: str | None = None,
-        api_key: str | None = None,
     ) -> bool:
         """Run the optimizer in a worker thread.
 
         Args:
             optimizer_name: Explicit optimizer backend name. When *None*,
                 auto-detects the best available backend.
-            api_key: Optional API key passed through to the optimizer.
 
         Returns *True* if started, *False* if already busy.
         """
@@ -102,7 +102,7 @@ class Worker:
         self._pause_event.clear()
         self._stop_event.clear()
 
-        optimizer = self._create_optimizer(optimizer_name=optimizer_name, api_key=api_key)
+        optimizer = self._create_optimizer(optimizer_name=optimizer_name)
 
         def _run() -> None:
             try:
@@ -128,20 +128,15 @@ class Worker:
         self,
         *,
         optimizer_name: str | None = None,
-        api_key: str | None = None,
     ) -> Optimizer:
         """Create an optimizer using the registry.
 
         Falls back to auto-detection when *optimizer_name* is not given.
         """
-        name = optimizer_name or get_default_optimizer_name()
+        name = optimizer_name or get_default_optimizer_name(self._config)
 
-        kwargs = {}
-        if api_key:
-            kwargs["api_key"] = api_key
-
-        log.info("Using optimizer: %s", name)
-        return create_optimizer(name, **kwargs)
+        log.info("Using optimizer: %s, with config", name)
+        return create_optimizer(name, config=self._config)
 
     def start_export(
         self,

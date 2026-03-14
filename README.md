@@ -1,5 +1,9 @@
 # PDO — Product Description Optimizer
 
+<p align="center">
+  <img src="docs/logo.png" alt="PDO Logo" width="150" />
+</p>
+
 A daemon/client CLI tool for batch-optimizing product descriptions using AI.
 
 Import product data from CSV, optimize descriptions with Google Gemini, validate for accuracy, and export the results — all controlled through a familiar CLI interface (think `systemctl` or `docker`).

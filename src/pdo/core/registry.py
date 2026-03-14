@@ -113,7 +113,17 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
                 "Set GEMINI_API_KEY or pass --api-key on the CLI."
             )
             raise ValueError(msg)
-        return GeminiOptimizer(api_key=api_key)
+        target_sentences = int((config.options.get("target_sentences") if config else None) or 3)
+        style_instructions = (config.options.get("style_instructions") if config else None) or None
+        optimize_temperature = float((config.options.get("optimize_temperature") if config else None) or 0.4)
+        validate_temperature = float((config.options.get("validate_temperature") if config else None) or 0.1)
+        return GeminiOptimizer(
+            api_key=api_key,
+            target_sentences=target_sentences,
+            style_instructions=style_instructions,
+            optimize_temperature=optimize_temperature,
+            validate_temperature=validate_temperature,
+        )
 
     if name == "local_llm":
         try:
@@ -127,7 +137,18 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
         
         address = (config.options.get("local_llm_address") if config else None) or _DEFAULT_LOCAL_LLM_ADDRESS
         model = (config.options.get("local_llm_model") if config else None) or _DEFAULT_LOCAL_LLM_MODEL
-        return LocalLLMOptimizer(address=address, model=model)
+        target_sentences = int((config.options.get("target_sentences") if config else None) or 3)
+        style_instructions = (config.options.get("style_instructions") if config else None) or None
+        optimize_temperature = float((config.options.get("optimize_temperature") if config else None) or 0.4)
+        validate_temperature = float((config.options.get("validate_temperature") if config else None) or 0.1)
+        return LocalLLMOptimizer(
+            address=address,
+            model=model,
+            target_sentences=target_sentences,
+            style_instructions=style_instructions,
+            optimize_temperature=optimize_temperature,
+            validate_temperature=validate_temperature,
+        )
 
     known = [o.name for o in list_optimizers(config)]
     msg = f"Unknown optimizer: {name!r}. Available: {', '.join(known)}"

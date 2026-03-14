@@ -114,14 +114,59 @@ PDO uses layered configuration (highest priority first):
 
 **Key environment variables:**
 
-| Variable         | Default              | Description            |
-|------------------|----------------------|------------------------|
-| `GEMINI_API_KEY`        | —                           | Google Gemini API key            |
-| `PDO_LOCAL_LLM_ADDRESS` | `http://127.0.0.1:11434/v1` | Local OpenAI-compatible endpoint |
-| `PDO_LOCAL_LLM_MODEL`   | `local-model`               | Model name to pass to the server |
-| `PDO_DATA_DIR`          | `~/.pdo/data`               | Database & PID storage           |
-| `PDO_LOG_DIR`           | `~/.pdo/logs`               | Log file directory               |
-| `PDO_SOCKET_PATH`       | `~/.pdo/pdo.sock`           | Daemon socket path               |
+| Variable                | Default                       | Description                      |
+|-------------------------|-------------------------------|----------------------------------|
+| `GEMINI_API_KEY`        | —                             | Google Gemini API key            |
+| `PDO_LOCAL_LLM_ADDRESS` | `http://127.0.0.1:11434/v1`  | Local OpenAI-compatible endpoint |
+| `PDO_LOCAL_LLM_MODEL`   | `local-model`                 | Model name to pass to the server |
+| `PDO_DATA_DIR`          | `~/.pdo/data`                 | Database & PID storage           |
+| `PDO_LOG_DIR`           | `~/.pdo/logs`                 | Log file directory               |
+| `PDO_SOCKET_PATH`       | `~/.pdo/pdo.sock`             | Daemon socket path               |
+
+## Optimizer Tuning
+
+All optimizer behaviour is controlled with `pdo config set`. Settings are shared across backends (only one optimizer runs at a time).
+
+### Output quality
+
+| Config key           | Default | Description |
+|----------------------|---------|-------------|
+| `target_sentences`   | `3`     | Exact number of sentences the AI must produce. Increase for richer copy, decrease for compact listings. |
+| `style_instructions` | *(none)* | Free-text style guide appended to the system prompt — e.g. tone, structure, call-to-action rules. |
+
+```bash
+pdo config set target_sentences 2
+pdo config set style_instructions "Starte mit dem Produkt selbst, erwähne dann die Vorteile und ende mit einem sanften Kaufimpuls."
+```
+
+### Temperature (creativity vs. discipline)
+
+| Config key              | Default | Description |
+|-------------------------|---------|-------------|
+| `optimize_temperature`  | `0.4`   | Sampling temperature for the **generate** step. Lower = more rule-following; higher = more creative. |
+| `validate_temperature`  | `0.1`   | Sampling temperature for the **QA/validate** step. Keep this low for deterministic fact-checking. |
+
+```bash
+pdo config set optimize_temperature 0.3   # stricter rule-following
+pdo config set validate_temperature 0.1   # keep deterministic
+```
+
+### Local LLM connection
+
+| Config key            | Default                      | Description |
+|-----------------------|------------------------------|-------------|
+| `local_llm_address`   | `http://127.0.0.1:11434/v1` | Base URL of the OpenAI-compatible server |
+| `local_llm_model`     | `local-model`                | Model identifier passed in the request |
+
+```bash
+pdo config set local_llm_address http://127.0.0.1:11434/v1
+pdo config set local_llm_model llama3.2
+```
+
+View or verify all active settings at any time:
+```bash
+pdo config list
+```
 
 ## Development
 

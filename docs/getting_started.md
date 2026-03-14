@@ -181,11 +181,34 @@ pdo daemon stop
 
 ## What's Next
 
-- **Custom prompts** — edit the system prompts in `src/pdo/core/gemini_optimizer.py` to match your catalogue style
-- **Different model** — pass `model="gemini-2.0-pro"` in the `GeminiOptimizer` constructor for higher quality (slower)
-- **Config file** — create `~/.pdo/config.toml` for persistent settings:
+- **Tune output quality** — control length and style without touching code:
+  ```bash
+  pdo config set target_sentences 2
+  pdo config set style_instructions "Describe the product, highlight key features, end with a gentle call to action."
+  ```
+
+- **Adjust temperature** — lower values produce more rule-consistent output:
+  ```bash
+  pdo config set optimize_temperature 0.3   # generate step (default 0.4)
+  pdo config set validate_temperature 0.1   # QA step (default 0.1)
+  ```
+
+- **Switch optimizer** — use a local model instead of Gemini:
+  ```bash
+  pdo config set local_llm_address http://127.0.0.1:11434/v1
+  pdo config set local_llm_model llama3.2
+  pdo optimize --optimizer local_llm --watch
+  ```
+
+- **Persistent config** — all settings survive restarts via `~/.pdo/config.toml`:
   ```toml
   [pdo]
-  data_dir = "/path/to/data"
-  log_dir = "/path/to/logs"
+  optimizer            = "local_llm"
+  local_llm_address    = "http://127.0.0.1:11434/v1"
+  local_llm_model      = "llama3.2"
+  target_sentences     = "2"
+  optimize_temperature = "0.4"
+  validate_temperature = "0.1"
+  style_instructions   = "Starte mit dem Produkt selbst, erwähne dann die Vorteile und ende mit einem sanften Kaufimpuls."
   ```
+  Manage it through `pdo config set / get / list` — no manual editing required.

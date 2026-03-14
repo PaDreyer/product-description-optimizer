@@ -41,6 +41,48 @@ class TestGeminiOptimizerInit:
         assert opt._model == "gemini-2.0-flash"
 
 
+class TestPromptContent:
+    """Verify the prompts sent to Gemini contain the right content."""
+
+    def _make_optimizer_wired(self, mock_client, **kwargs):
+        opt = GeminiOptimizer(api_key="test-key", **kwargs)
+        mock_client.models.generate_content.side_effect = [
+            _make_response("Good description."),
+            _make_response('{"approved": true, "issues": [], "suggestion": ""}'),
+        ]
+        return opt
+
+    def test_target_sentences_in_system_prompt(self, mock_client) -> None:
+        opt = self._make_optimizer_wired(mock_client, target_sentences=5)
+        opt.optimize("P001", "Some desc", {})
+        first_call = mock_client.models.generate_content.call_args_list[0]
+        system_msg = first_call.kwargs["config"].system_instruction
+        assert "5 sentence" in system_msg
+
+    def test_style_instructions_in_system_prompt(self, mock_client) -> None:
+        opt = self._make_optimizer_wired(
+            mock_client, style_instructions="Start with the main benefit."
+        )
+        opt.optimize("P001", "Some desc", {})
+        first_call = mock_client.models.generate_content.call_args_list[0]
+        system_msg = first_call.kwargs["config"].system_instruction
+        assert "Start with the main benefit." in system_msg
+
+    def test_product_id_not_in_optimize_user_prompt(self, mock_client) -> None:
+        opt = self._make_optimizer_wired(mock_client)
+        opt.optimize("SECRET_ID_XYZ", "Some desc", {})
+        first_call = mock_client.models.generate_content.call_args_list[0]
+        user_msg = first_call.args[0] if first_call.args else first_call.kwargs.get("contents", "")
+        assert "SECRET_ID_XYZ" not in user_msg
+
+    def test_no_style_instructions_by_default(self, mock_client) -> None:
+        opt = self._make_optimizer_wired(mock_client)
+        opt.optimize("P001", "Some desc", {})
+        first_call = mock_client.models.generate_content.call_args_list[0]
+        system_msg = first_call.kwargs["config"].system_instruction
+        assert "Additional Instructions" not in system_msg
+
+
 class TestTwoStepFlow:
     def test_approved_returns_optimized(self, mock_client) -> None:
         """Step 1 optimizes, step 2 approves → return optimized text."""

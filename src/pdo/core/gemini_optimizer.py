@@ -25,7 +25,7 @@ log = logging.getLogger(__name__)
 
 # ── Prompt templates ─────────────────────────────────────────────────
 
-_SYSTEM_OPTIMIZE = """\
+_SYSTEM_OPTIMIZE_BASE = """\
 You are an expert product copywriter for a B2B office supplies catalogue.
 Your task is to rewrite product descriptions so they are:
 - Clear, concise, and professional
@@ -38,22 +38,27 @@ Rules:
 - Do NOT add superlatives ("best", "leading", "unmatched") unless they are in
   the original description.
 - Keep the tone professional and informative.
+- Do NOT use emoji or special symbols.
+- Reproduce brand names, product names, and attribute values EXACTLY as given —
+  do not paraphrase, abbreviate, or expand them.
+- If the context lists a value such as "6 Neonfarben", state it as-is. Do NOT
+  enumerate or invent specific sub-values (e.g. do not list colour names).
 - If the original description is empty, create one based purely on the context
   fields provided (title, brand, attributes, etc.).
 - Respond with ONLY the optimized description text. No headers, no markdown,
   no explanations.
 - Write in the SAME LANGUAGE as the original description.
-"""
+- Write exactly {target_sentences} sentence(s). No more, no less.
+{style_block}"""
 
 _USER_OPTIMIZE = """\
-Product ID: {product_id}
-
 Original Description:
 {description}
 
 Context:
 {context}
 
+{empty_warning}Write exactly {target_sentences} sentence(s). No more, no less.
 Write an optimized product description based ONLY on the information above.
 """
 
@@ -69,26 +74,34 @@ Check for:
 3. **Misleading statements** — exaggerations or implications not backed by facts
 4. **Language consistency** — the optimized text should be in the same language
    as the original
+5. **Brand / product name errors** — brand names must be reproduced exactly;
+   any misspelling or paraphrase is an error
+6. **Invented specifics** — if an attribute says e.g. "6 Neonfarben", the text
+   must NOT list individual colour names or other sub-values not in the input
+7. **Emoji** — no emoji or special symbols are allowed
 
 Respond in JSON (no markdown fences) with exactly this structure:
 {{"approved": true/false, "issues": ["issue1", "issue2", ...], "suggestion": "..."}}
 
 - If approved is true, issues should be empty and suggestion should be empty.
 - If approved is false, list every issue found and provide a corrected version
-  in the "suggestion" field that fixes the issues while keeping the improved
+  in the "suggestion" field that fixes ALL issues while keeping the improved
   style.
 """
 
 _USER_VALIDATE = """\
 Original Product Data:
 - Product ID: {product_id}
+- Brand: {brand}
 - Original Description: {description}
-- Context: {context}
+- Context attributes (must be reproduced exactly, not expanded):
+{context}
 
 Optimized Description:
 {optimized}
 
-Is this optimized description accurate and free of false promises?
+Is this optimized description accurate and free of errors? Check brand name
+spelling, attribute values, and absence of emoji carefully.
 """
 
 # ── Configuration defaults ───────────────────────────────────────────
@@ -96,6 +109,7 @@ Is this optimized description accurate and free of false promises?
 _DEFAULT_MODEL = "gemini-2.0-flash"
 _MAX_RETRIES = 3
 _RETRY_BASE_DELAY = 2.0  # seconds
+_DEFAULT_TARGET_SENTENCES = 3
 
 
 class GeminiOptimizer(Optimizer):
@@ -110,6 +124,11 @@ class GeminiOptimizer(Optimizer):
         api_key: API key. Falls back to ``GEMINI_API_KEY`` env var.
         temperature: Sampling temperature for generation (default: 0.7).
         max_retries: Number of retries on transient API errors.
+        target_sentences: Target number of sentences for the optimized description
+            (default: 3). Configure with: ``pdo config set target_sentences <n>``
+        style_instructions: Optional extra instructions appended to the system prompt,
+            e.g. ``"Start with the main benefit. End with a call to action."``
+            Configure with: ``pdo config set style_instructions "..."``
     """
 
     def __init__(
@@ -117,8 +136,11 @@ class GeminiOptimizer(Optimizer):
         *,
         model: str = _DEFAULT_MODEL,
         api_key: str | None = None,
-        temperature: float = 0.7,
+        optimize_temperature: float = 0.4,
+        validate_temperature: float = 0.1,
         max_retries: int = _MAX_RETRIES,
+        target_sentences: int = _DEFAULT_TARGET_SENTENCES,
+        style_instructions: str | None = None,
     ) -> None:
         key = api_key or os.environ.get("GEMINI_API_KEY", "")
         if not key:
@@ -130,8 +152,15 @@ class GeminiOptimizer(Optimizer):
 
         self._client = genai.Client(api_key=key)
         self._model = model
-        self._temperature = temperature
+        self._optimize_temperature = optimize_temperature
+        self._validate_temperature = validate_temperature
         self._max_retries = max_retries
+        self._target_sentences = target_sentences
+        style_block = f"\n# Additional Instructions\n{style_instructions}\n" if style_instructions else ""
+        self._system_optimize = _SYSTEM_OPTIMIZE_BASE.format(
+            target_sentences=target_sentences,
+            style_block=style_block,
+        )
 
     # ── Public interface (Optimizer ABC) ──────────────────────────────
 
@@ -150,25 +179,38 @@ class GeminiOptimizer(Optimizer):
         ctx_str = self._format_context(context)
 
         # Step 1: Optimize
+        empty_warning = (
+            "[WARNING] The original description is empty. "
+            "Use ONLY the Context fields above — do NOT invent any numbers, "
+            "specifications, or product categories not listed there.\n\n"
+            if not description
+            else ""
+        )
         optimized = self._call_gemini(
-            system=_SYSTEM_OPTIMIZE,
+            system=self._system_optimize,
             user=_USER_OPTIMIZE.format(
-                product_id=product_id,
                 description=description or "(empty)",
                 context=ctx_str,
+                empty_warning=empty_warning,
+                target_sentences=self._target_sentences,
             ),
+            temperature=self._optimize_temperature,
         )
         log.info("Step 1 complete for %s: generated %d chars", product_id, len(optimized))
 
         # Step 2: Validate
+        # Extract brand from context for explicit validation
+        brand = (context or {}).get("brand") or (context or {}).get("Marke") or ""
         validation_raw = self._call_gemini(
             system=_SYSTEM_VALIDATE,
             user=_USER_VALIDATE.format(
                 product_id=product_id,
+                brand=brand,
                 description=description or "(empty)",
                 context=ctx_str,
                 optimized=optimized,
             ),
+            temperature=self._validate_temperature,
         )
 
         validated = self._parse_validation(validation_raw, optimized)
@@ -178,7 +220,7 @@ class GeminiOptimizer(Optimizer):
 
     # ── Internals ────────────────────────────────────────────────────
 
-    def _call_gemini(self, *, system: str, user: str) -> str:
+    def _call_gemini(self, *, system: str, user: str, temperature: float) -> str:
         """Call the Gemini API with retry logic for transient errors."""
         for attempt in range(1, self._max_retries + 1):
             try:
@@ -187,7 +229,7 @@ class GeminiOptimizer(Optimizer):
                     contents=user,
                     config=types.GenerateContentConfig(
                         system_instruction=system,
-                        temperature=self._temperature,
+                        temperature=temperature,
                     ),
                 )
                 text = response.text

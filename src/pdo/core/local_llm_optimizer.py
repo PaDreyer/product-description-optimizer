@@ -19,29 +19,20 @@ log = logging.getLogger(__name__)
 
 # Prompt templates
 _SYSTEM_OPTIMIZE_BASE = """\
-You are an expert product copywriter for a B2B office supplies catalogue.
-Your task is to rewrite product descriptions so they are:
-- Clear, concise, and professional
-- SEO-friendly (use relevant keywords naturally)
-- Factually accurate — use ONLY information present in the input
-- Well-structured with key features highlighted
+You are a product copywriter. Rewrite the product description to be clear,
+concise, professional, and SEO-friendly.
 
-Rules:
-- Do NOT invent features, specifications, or claims that are not in the input.
-- Do NOT add superlatives ("best", "leading", "unmatched") unless they are in
-  the original description.
-- Keep the tone professional and informative.
-- Do NOT use emoji or special symbols.
-- Reproduce brand names, product names, and attribute values EXACTLY as given —
-  do not paraphrase, abbreviate, or expand them.
-- If the context lists a value such as "6 Neonfarben", state it as-is. Do NOT
-  enumerate or invent specific sub-values (e.g. do not list colour names).
-- If the original description is empty, create one based purely on the context
-  fields provided (title, brand, attributes, etc.).
-- Respond with ONLY the optimized description text. No headers, no markdown,
-  no explanations.
-- Write in the SAME LANGUAGE as the original description.
-- Write exactly {target_sentences} sentence(s). No more, no less.
+IMPORTANT rules:
+1. Use ONLY facts from the input. Do NOT invent anything.
+2. Keep all numbers, percentages, warranties, and certifications from the
+   original (e.g. "50% weiteres Öffnen", "5 Jahre Garantie", "Blauer Engel").
+3. Copy brand names and attribute values exactly as given.
+4. Write in the SAME language as the input.
+5. Output ONLY the description as a single paragraph — no line breaks, no
+   bullet points, no headings, no markdown, no emoji.
+6. Use correct grammar.
+7. Vary sentence starts — do not begin every sentence the same way.
+8. Aim for around {target_sentences} sentences.
 {style_block}"""
 
 _USER_OPTIMIZE = """\
@@ -51,35 +42,25 @@ Original Description:
 Context:
 {context}
 
-{empty_warning}Write exactly {target_sentences} sentence(s). No more, no less.
-Write an optimized product description based ONLY on the information above.
+{empty_warning}Rewrite as a single paragraph. Keep all numbers, percentages, warranties,
+and certifications. Around {target_sentences} sentences.
 """
 
 _SYSTEM_VALIDATE = """\
-You are a quality-assurance reviewer for product descriptions.
-Your job is to compare an optimized description against the original product
-data and determine whether the optimized version is accurate.
+You are a quality reviewer. Compare the optimized description against the
+original data. Check for:
+1. Invented claims not in the original
+2. Important numbers, warranties, or certifications that were dropped
+3. Misspelled brand or product names
+4. Grammar errors
+5. Wrong language, emoji, or line breaks
 
-Check for:
-1. **False promises** — claims not supported by the original data
-2. **Hallucinated features** — specifications or properties that do not appear
-   in the original data
-3. **Misleading statements** — exaggerations or implications not backed by facts
-4. **Language consistency** — the optimized text should be in the same language
-   as the original
-5. **Brand / product name errors** — brand names must be reproduced exactly;
-   any misspelling or paraphrase is an error
-6. **Invented specifics** — if an attribute says e.g. "6 Neonfarben", the text
-   must NOT list individual colour names or other sub-values not in the input
-7. **Emoji** — no emoji or special symbols are allowed
+Respond in JSON:
+{{"approved": true/false, "issues": ["..."], "suggestion": "..."}}
 
-Respond in JSON (no markdown fences) with exactly this structure:
-{{"approved": true/false, "issues": ["issue1", "issue2", ...], "suggestion": "..."}}
-
-- If approved is true, issues should be empty and suggestion should be empty.
-- If approved is false, list every issue found and provide a corrected version
-  in the "suggestion" field that fixes ALL issues while keeping the improved
-  style.
+If approved: issues=[], suggestion="".
+If not approved: list issues and put a corrected single-paragraph description
+in "suggestion".
 """
 
 _USER_VALIDATE = """\

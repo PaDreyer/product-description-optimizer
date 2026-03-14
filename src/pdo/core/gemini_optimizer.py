@@ -31,24 +31,41 @@ Your task is to rewrite product descriptions so they are:
 - Clear, concise, and professional
 - SEO-friendly (use relevant keywords naturally)
 - Factually accurate — use ONLY information present in the input
-- Well-structured with key features highlighted
+- Well-structured with key selling points highlighted
 
 Rules:
+- PRESERVE all quantified claims from the original (percentages, capacities,
+  measurements, warranty durations, certifications). These are key selling
+  points. Example: if the original says "50% weiteres Öffnen" or "5 Jahre
+  Garantie", these MUST appear in the output.
+- Prioritize unique selling points and differentiating features — what makes
+  this product stand out? Certifications, guarantees, capacity, and
+  performance data are more valuable than generic feature lists.
+- Avoid generic filler phrases like "bietet", "verfügt über", "ermöglicht".
+  Instead, describe features with concrete benefits and action.
 - Do NOT invent features, specifications, or claims that are not in the input.
 - Do NOT add superlatives ("best", "leading", "unmatched") unless they are in
   the original description.
-- Keep the tone professional and informative.
+- Keep the tone professional, engaging, and informative.
+- Vary your sentence structure. Do not start consecutive sentences the same way
+  (e.g. avoid starting every sentence with the brand name or an article).
 - Do NOT use emoji or special symbols.
 - Reproduce brand names, product names, and attribute values EXACTLY as given —
   do not paraphrase, abbreviate, or expand them.
 - If the context lists a value such as "6 Neonfarben", state it as-is. Do NOT
   enumerate or invent specific sub-values (e.g. do not list colour names).
 - If the original description is empty, create one based purely on the context
-  fields provided (title, brand, attributes, etc.).
+  fields provided.
 - Respond with ONLY the optimized description text. No headers, no markdown,
   no explanations.
-- Write in the SAME LANGUAGE as the original description.
-- Write exactly {target_sentences} sentence(s). No more, no less.
+- Do NOT use line breaks or newlines. The entire output MUST be a single
+  continuous paragraph on one line.
+- Do NOT use bullet points or lists.
+- Write in the SAME LANGUAGE as the original description (or context variables,
+  if description is empty).
+- Pay attention to correct grammar, especially gendered articles and cases.
+- Aim for around {target_sentences} sentences, prioritizing natural flow and
+  readability over hitting an exact count.
 {style_block}"""
 
 _USER_OPTIMIZE = """\
@@ -58,35 +75,45 @@ Original Description:
 Context:
 {context}
 
-{empty_warning}Write exactly {target_sentences} sentence(s). No more, no less.
-Write an optimized product description based ONLY on the information above.
+{empty_warning}Rewrite the description above into a compelling, single-paragraph product
+description. Keep all quantified claims (percentages, capacities, warranty
+durations, certifications). Aim for around {target_sentences} sentences.
 """
 
 _SYSTEM_VALIDATE = """\
 You are a quality-assurance reviewer for product descriptions.
 Your job is to compare an optimized description against the original product
-data and determine whether the optimized version is accurate.
+data and determine whether the optimized version is accurate and complete.
 
 Check for:
 1. **False promises** — claims not supported by the original data
 2. **Hallucinated features** — specifications or properties that do not appear
    in the original data
 3. **Misleading statements** — exaggerations or implications not backed by facts
-4. **Language consistency** — the optimized text should be in the same language
-   as the original
-5. **Brand / product name errors** — brand names must be reproduced exactly;
+4. **Dropped key data** — important quantified claims from the original that
+   were omitted (e.g. percentages, capacities, warranty periods,
+   certifications like "Blauer Engel"). Flag as issue if significant data
+   was lost.
+5. **Language consistency** — the optimized text should be in the same language
+   as the original (or context)
+6. **Grammar errors** — check for correct grammar, especially gendered articles
+   and noun cases (e.g. in German: "ein Griffloch" not "einen Griffloch")
+7. **Brand / product name errors** — brand names must be reproduced exactly;
    any misspelling or paraphrase is an error
-6. **Invented specifics** — if an attribute says e.g. "6 Neonfarben", the text
+8. **Invented specifics** — if an attribute says e.g. "6 Neonfarben", the text
    must NOT list individual colour names or other sub-values not in the input
-7. **Emoji** — no emoji or special symbols are allowed
+9. **Emoji or formatting** — no emoji, special symbols, line breaks, or bullet
+   points are allowed
 
-Respond in JSON (no markdown fences) with exactly this structure:
+Respond in JSON format with exactly this structure:
 {{"approved": true/false, "issues": ["issue1", "issue2", ...], "suggestion": "..."}}
 
-- If approved is true, issues should be empty and suggestion should be empty.
-- If approved is false, list every issue found and provide a corrected version
-  in the "suggestion" field that fixes ALL issues while keeping the improved
-  style.
+- If approved is true, issues should be an empty list [] and suggestion should
+  be "".
+- If approved is false, list EVERY issue found. You MUST provide a corrected
+  version in the "suggestion" field that fixes ALL issues while keeping the
+  improved style. The suggestion MUST be a single continuous paragraph with
+  no line breaks.
 """
 
 _USER_VALIDATE = """\

@@ -261,6 +261,7 @@ class DaemonServer:
         if self._worker.is_busy:
             log.info("Stopping running operation before reset …")
             self._worker.stop()
+        self._worker.reset()
         self._db.reset()
         return Response(success=True, data={"message": "Database reset"})
 

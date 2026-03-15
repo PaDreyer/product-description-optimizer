@@ -182,6 +182,13 @@ class Worker:
             self._thread.join(timeout=timeout)
         log.info("Worker stopped")
 
+    def reset(self) -> None:
+        """Reset internal worker state (pauses, results, etc.)."""
+        self._pause_event.clear()
+        self._stop_event.clear()
+        self._last_result = {}
+        log.info("Worker state reset")
+
     def get_status(self) -> dict[str, Any]:
         """Return a status snapshot."""
         progress = self._db.get_progress()

@@ -21,9 +21,12 @@ from pdo.cli.common import global_options
     ),
 )
 @click.option("--delimiter", "-d", default=";", help="CSV delimiter (default: ;).")
+@click.option("--limit", "-l", type=int, help="Limit the number of products to import.")
 @global_options()
 @click.pass_context
-def import_cmd(ctx: click.Context, file: Path, mapping: tuple[str, ...], delimiter: str) -> None:
+def import_cmd(
+    ctx: click.Context, file: Path, mapping: tuple[str, ...], delimiter: str, limit: int | None
+) -> None:
     """Import a CSV file into the database.
 
     Each --mapping / -m flag maps a CSV column to one of three roles:
@@ -58,6 +61,7 @@ def import_cmd(ctx: click.Context, file: Path, mapping: tuple[str, ...], delimit
         "csv_path": str(file.resolve()),
         "column_mappings": column_mappings,
         "delimiter": delimiter,
+        "limit": limit,
     }
 
     try:

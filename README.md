@@ -71,7 +71,7 @@ docker rm -f pdo-daemon
 | `pdo daemon stop`        | Stop the daemon                              |
 | `pdo daemon status`      | Check if the daemon is running               |
 | `pdo daemon repair`      | Repair unresponsive daemon (clean PID/socket)|
-| `pdo import <file>`      | Import products from a CSV file              |
+| `pdo import <file> [-l N]` | Import products (optionally limit N)         |
 | `pdo optimize [--watch]` | Start optimization (optionally watch progress) |
 | `pdo optimizer list`     | List available optimizer backends            |
 | `pdo export <file>`      | Export results to CSV                        |

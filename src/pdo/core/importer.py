@@ -47,6 +47,7 @@ def import_csv(
     column_mappings: list[ColumnMapping],
     delimiter: str = ";",
     encoding: str | None = None,
+    limit: int | None = None,
 ) -> ImportResult:
     """Import a CSV file into the database.
 
@@ -105,6 +106,8 @@ def import_csv(
     row_num = 0
 
     for row_num, row in enumerate(reader, start=1):
+        if limit is not None and row_num > limit:
+            break
         try:
             product = _build_product_dict(
                 row_number=row_num,

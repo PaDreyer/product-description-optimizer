@@ -117,6 +117,8 @@ You should see:
 ✓ Import started
 ```
 
+> **Tip:** You can limit the number of products imported using the `--limit` or `-l` flag (e.g., `--limit 10` is great for testing the pipeline).
+
 Check progress:
 ```bash
 pdo status

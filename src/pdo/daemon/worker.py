@@ -49,6 +49,7 @@ class Worker:
         column_mappings: list[dict[str, str]],
         *,
         delimiter: str = ";",
+        limit: int | None = None,
     ) -> bool:
         """Run the CSV importer in a worker thread.
 
@@ -69,7 +70,11 @@ class Worker:
         def _run() -> None:
             try:
                 result = import_csv(
-                    self._db, csv_path, column_mappings=mappings, delimiter=delimiter
+                    self._db,
+                    csv_path,
+                    column_mappings=mappings,
+                    delimiter=delimiter,
+                    limit=limit,
                 )
                 self._last_result = {
                     "total_rows": result.total_rows,

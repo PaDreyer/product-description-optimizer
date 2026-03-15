@@ -48,6 +48,18 @@ class TestImportValid:
         assert result.skipped_count == 0
         assert result.errors == []
 
+    def test_import_with_limit(self, db: Database, tmp_path: Path) -> None:
+        csv_file = _write_csv(tmp_path / "products.csv", BASIC_CSV)
+        result = import_csv(db, csv_file, column_mappings=BASIC_MAPPINGS, limit=2)
+        assert result.imported_count == 2
+        assert result.total_rows == 2
+        assert result.skipped_count == 0
+        assert result.errors == []
+        products = db.get_all_products()
+        assert len(products) == 2
+        assert products[0]["product_id_value"] == "P001"
+        assert products[1]["product_id_value"] == "P002"
+
     def test_products_in_database(self, db: Database, tmp_path: Path) -> None:
         csv_file = _write_csv(tmp_path / "products.csv", BASIC_CSV)
         import_csv(db, csv_file, column_mappings=BASIC_MAPPINGS)

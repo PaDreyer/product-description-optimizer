@@ -216,7 +216,10 @@ class DaemonServer:
             return Response(success=False, error="Missing 'csv_path' in payload")
         column_mappings = payload.get("column_mappings", [])
         delimiter = payload.get("delimiter", ";")
-        started = self._worker.start_import(Path(csv_path), column_mappings, delimiter=delimiter)
+        limit = payload.get("limit")
+        started = self._worker.start_import(
+            Path(csv_path), column_mappings, delimiter=delimiter, limit=limit
+        )
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Import started"})

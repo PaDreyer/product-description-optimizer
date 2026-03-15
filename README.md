@@ -39,6 +39,27 @@ pdo export optimized_output.csv
 
 → See [Getting Started](docs/getting_started.md) for a detailed walkthrough.
 
+### Using Docker
+
+Alternatively, you can run the PDO daemon and CLI entirely within Docker, without installing Python dependencies locally.
+
+```bash
+# Build the image
+docker build -t pdo-daemon .
+
+# Start the daemon container (mounts current directory to /app/workspace)
+docker run -d --name pdo-daemon -v $(pwd):/app/workspace pdo-daemon
+
+# Jump into the container shell to run CLI commands
+docker exec -it pdo-daemon bash
+
+# Inside the container:
+# root@container:/app# pdo import /app/workspace/products.csv ...
+
+# Stop and remove the container when finished
+docker rm -f pdo-daemon
+```
+
 ## CLI Reference
 
 | Command                  | Description                                  |

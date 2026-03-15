@@ -1,4 +1,16 @@
-.PHONY: test lint test-unit test-integration format
+.PHONY: test lint test-unit test-integration format docker-build docker-run docker-shell docker-clean
+
+docker-build:
+	docker build -t pdo-daemon .
+
+docker-run:
+	docker run -d --name pdo-daemon -v $$(pwd):/app/workspace pdo-daemon
+
+docker-shell:
+	docker exec -it pdo-daemon bash
+
+docker-clean:
+	docker rm -f pdo-daemon
 
 test-unit:
 	python -m pytest tests/ -v --ignore=tests/test_integration.py

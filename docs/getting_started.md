@@ -30,6 +30,29 @@ pdo version
 # → pdo 0.1.0
 ```
 
+### Alternative: Install via Docker
+
+If you prefer not to install Python dependencies locally, you can run the entire PDO stack through Docker:
+
+```bash
+# Build the image
+docker build -t pdo-daemon .
+
+# Run the container in the background
+# The -v flag mounts your current directory to /app/workspace in the container
+docker run -d --name pdo-daemon -v $(pwd):/app/workspace pdo-daemon
+
+# Jump into the container using a bash shell
+docker exec -it pdo-daemon bash
+```
+
+Once inside the container shell, you can simply run `pdo` commands as usual. Any files in your local directory will be available at `/app/workspace/`.
+
+When you are finished, you can stop and remove the container:
+```bash
+docker rm -f pdo-daemon
+```
+
 ## 2. Set Your API Key
 
 ```bash

@@ -257,13 +257,15 @@ class DaemonServer:
     def _handle_reset(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
         assert self._db is not None
+        keep = payload.get("keep", False)
         # Gracefully stop any running operation first
         if self._worker.is_busy:
             log.info("Stopping running operation before reset …")
             self._worker.stop()
         self._worker.reset()
-        self._db.reset()
-        return Response(success=True, data={"message": "Database reset"})
+        self._db.reset(keep=keep)
+        msg = "Products kept but flagged pending" if keep else "Database reset"
+        return Response(success=True, data={"message": msg})
 
     def _handle_stop(self, payload: dict[str, Any]) -> Response:
         self._running = False

@@ -212,17 +212,35 @@ class Database:
 
     # ── Maintenance ──────────────────────────────────────────────────
 
-    def reset(self) -> None:
-        """Drop all data and reinitialize the schema."""
+    def reset(self, keep: bool = False) -> None:
+        """Drop all data and reinitialize the schema.
+        
+        If keep is True, retain products and mappings but flag all products as pending
+        and reset pipeline state metrics.
+        """
         with self._conn:
-            self._conn.executescript(
-                """
-                DROP TABLE IF EXISTS column_mappings;
-                DROP TABLE IF EXISTS products;
-                DROP TABLE IF EXISTS pipeline_state;
-                """
-            )
-        self.initialize()
+            if keep:
+                self._conn.executescript(
+                    """
+                    UPDATE products 
+                       SET status = 'pending', 
+                           optimized_description = NULL, 
+                           error_message = NULL;
+                    UPDATE pipeline_state 
+                       SET stage = 'idle', 
+                           processed_count = 0;
+                    """
+                )
+            else:
+                self._conn.executescript(
+                    """
+                    DROP TABLE IF EXISTS column_mappings;
+                    DROP TABLE IF EXISTS products;
+                    DROP TABLE IF EXISTS pipeline_state;
+                    """
+                )
+        if not keep:
+            self.initialize()
 
     def close(self) -> None:
         """Close the database connection."""

@@ -157,18 +157,20 @@ def resume(ctx: click.Context) -> None:
 
 @cli.command()
 @click.option("--yes", "-y", is_flag=True, help="Skip confirmation prompt.")
+@click.option("--keep", is_flag=True, help="Keep products but flag them as pending again.")
 @global_options()
 @click.pass_context
-def reset(ctx: click.Context, *, yes: bool) -> None:
+def reset(ctx: click.Context, *, yes: bool, keep: bool) -> None:
     """Reset the database — stops any running operation, then clears all data."""
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
-    if (
-        not yes
-        and not ctx.obj.json_output
-        and not click.confirm("This will stop any running operation and delete all data. Continue?")
-    ):
+    prompt_msg = (
+        "This will stop any running operation and flag all products as pending. Continue?"
+        if keep
+        else "This will stop any running operation and delete all data. Continue?"
+    )
+    if not yes and not ctx.obj.json_output and not click.confirm(prompt_msg):
         ctx.obj.out.print("[dim]Aborted.[/dim]")
         return
 
@@ -178,14 +180,19 @@ def reset(ctx: click.Context, *, yes: bool) -> None:
         console = Console()
         if not ctx.obj.json_output:
             with console.status("[bold cyan]Resetting…[/bold cyan]"):
-                resp = send_command("reset")
+                resp = send_command("reset", {"keep": keep})
         else:
-            resp = send_command("reset")
+            resp = send_command("reset", {"keep": keep})
 
+        msg = (
+            "[green]✓[/green] All operations stopped, products flagged as pending again"
+            if keep
+            else "[green]✓[/green] All operations stopped, database reset"
+        )
         ctx.obj.out.result(
             success=resp.success,
             error=resp.error,
-            msg="[green]✓[/green] All operations stopped, database reset",
+            msg=msg,
         )
     except DaemonNotRunningError as exc:
         ctx.obj.out.result(success=False, error=str(exc))

@@ -107,6 +107,7 @@ def import_csv(
 
     for row_num, row in enumerate(reader, start=1):
         if limit is not None and row_num > limit:
+            row_num -= 1  # don't count the row we didn't process
             break
         try:
             product = _build_product_dict(
@@ -191,7 +192,7 @@ def _build_product_dict(
 
     return {
         "source_row_number": row_number,
-        "raw_data": {k: v for k, v in row.items()},
+        "raw_data": dict(row),
         "product_id_value": product_id_value,
         "original_description": original_description,
         "context_data": context_data if context_data else None,

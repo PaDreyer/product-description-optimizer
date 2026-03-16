@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import click
 from rich.console import Console
@@ -122,3 +122,19 @@ def global_options() -> Callable[[click.Command], click.Command]:
         return f
 
     return decorator
+
+
+T = TypeVar("T")
+
+
+def run_with_spinner(label: str, fn: Callable[[], T], *, json_output: bool) -> T:
+    """Execute *fn*, wrapping it in a Rich spinner when not in JSON mode.
+
+    Eliminates the repeated ``if not json_output: with console.status(…)``
+    pattern across CLI commands.
+    """
+    if json_output:
+        return fn()
+    with console.status(label):
+        return fn()
+

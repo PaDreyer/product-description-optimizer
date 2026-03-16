@@ -6,7 +6,7 @@ from pathlib import Path
 
 import click
 
-from pdo.cli.common import global_options
+from pdo.cli.common import global_options, run_with_spinner
 
 
 @click.command()
@@ -25,15 +25,11 @@ def export(ctx: click.Context, output_file: Path, *, include_errors: bool) -> No
     }
 
     try:
-        from rich.console import Console
-
-        console = Console()
-        if not ctx.obj.json_output:
-            with console.status("[bold cyan]Exporting…[/bold cyan]"):
-                resp = send_command("export", payload)
-        else:
-            resp = send_command("export", payload)
-
+        resp = run_with_spinner(
+            "[bold cyan]Exporting…[/bold cyan]",
+            lambda: send_command("export", payload),
+            json_output=ctx.obj.json_output,
+        )
         ctx.obj.out.result(
             success=resp.success,
             data=resp.data if resp.success else dict(),

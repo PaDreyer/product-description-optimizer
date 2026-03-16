@@ -30,14 +30,21 @@ class OptimizerInfo:
     reason: str = ""
 
 
+def _get_opt(config: "PdoConfig | None", key: str, default: Any = None) -> Any:
+    """Safely read a config option, returning *default* when config is absent."""
+    if config is None:
+        return default
+    return config.options.get(key) or default
+
+
 def _check_gemini_available(config: "PdoConfig | None" = None) -> tuple[bool, str]:
     """Check whether the Gemini backend can be used."""
     try:
         import google.genai  # noqa: F401
     except ImportError:
         return False, "google-genai not installed (pip install 'pdo[gemini]')"
-    
-    api_key = (config.options.get("gemini_api_key", "") if config else "") or os.environ.get("GEMINI_API_KEY", "")
+
+    api_key = _get_opt(config, "gemini_api_key", "") or os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return False, "GEMINI_API_KEY not set in config or environment"
     return True, ""
@@ -76,11 +83,21 @@ def get_default_optimizer_name(config: "PdoConfig | None" = None) -> str:
     return "gemini" if gemini_ok else "dummy"
 
 
+def _common_optimizer_kwargs(config: "PdoConfig | None") -> dict[str, Any]:
+    """Extract the shared optimizer kwargs from config."""
+    return {
+        "target_sentences": int(_get_opt(config, "target_sentences", 3)),
+        "style_instructions": _get_opt(config, "style_instructions"),
+        "optimize_temperature": float(_get_opt(config, "optimize_temperature", 0.4)),
+        "validate_temperature": float(_get_opt(config, "validate_temperature", 0.1)),
+    }
+
+
 def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any):
     """Instantiate an optimizer by name.
 
     Args:
-        name: Registry name (``"gemini"`` or ``"dummy"``).
+        name: Registry name (``"gemini"``, ``"local_llm"``, or ``"dummy"``).
         config: Optional PdoConfig instance for fetching connection settings.
         **kwargs: Passed through to the optimizer constructor
             (e.g. ``api_key`` for Gemini).
@@ -106,24 +123,18 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
             )
             raise ValueError(msg) from exc
 
-        api_key = kwargs.get("api_key") or (config.options.get("gemini_api_key", "") if config else "") or os.environ.get("GEMINI_API_KEY", "")
+        api_key = (
+            kwargs.get("api_key")
+            or _get_opt(config, "gemini_api_key", "")
+            or os.environ.get("GEMINI_API_KEY", "")
+        )
         if not api_key:
             msg = (
                 "Gemini optimizer requires an API key. "
                 "Set GEMINI_API_KEY or pass --api-key on the CLI."
             )
             raise ValueError(msg)
-        target_sentences = int((config.options.get("target_sentences") if config else None) or 3)
-        style_instructions = (config.options.get("style_instructions") if config else None) or None
-        optimize_temperature = float((config.options.get("optimize_temperature") if config else None) or 0.4)
-        validate_temperature = float((config.options.get("validate_temperature") if config else None) or 0.1)
-        return GeminiOptimizer(
-            api_key=api_key,
-            target_sentences=target_sentences,
-            style_instructions=style_instructions,
-            optimize_temperature=optimize_temperature,
-            validate_temperature=validate_temperature,
-        )
+        return GeminiOptimizer(api_key=api_key, **_common_optimizer_kwargs(config))
 
     if name == "local_llm":
         try:
@@ -134,21 +145,10 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
                 "Install with: pip install 'pdo[openai]'"
             )
             raise ValueError(msg) from exc
-        
-        address = (config.options.get("local_llm_address") if config else None) or _DEFAULT_LOCAL_LLM_ADDRESS
-        model = (config.options.get("local_llm_model") if config else None) or _DEFAULT_LOCAL_LLM_MODEL
-        target_sentences = int((config.options.get("target_sentences") if config else None) or 3)
-        style_instructions = (config.options.get("style_instructions") if config else None) or None
-        optimize_temperature = float((config.options.get("optimize_temperature") if config else None) or 0.4)
-        validate_temperature = float((config.options.get("validate_temperature") if config else None) or 0.1)
-        return LocalLLMOptimizer(
-            address=address,
-            model=model,
-            target_sentences=target_sentences,
-            style_instructions=style_instructions,
-            optimize_temperature=optimize_temperature,
-            validate_temperature=validate_temperature,
-        )
+
+        address = _get_opt(config, "local_llm_address", _DEFAULT_LOCAL_LLM_ADDRESS)
+        model = _get_opt(config, "local_llm_model", _DEFAULT_LOCAL_LLM_MODEL)
+        return LocalLLMOptimizer(address=address, model=model, **_common_optimizer_kwargs(config))
 
     known = [o.name for o in list_optimizers(config)]
     msg = f"Unknown optimizer: {name!r}. Available: {', '.join(known)}"

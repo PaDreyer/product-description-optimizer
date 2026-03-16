@@ -34,7 +34,7 @@ class Optimizer(ABC):
         Args:
             product_id: The extracted product identifier.
             description: The original product description.
-            context: Optional dict of extra context fields (brand, title,
+            context: Optional dict of extra context fields (title,
                 feature/attribute pairs, etc.).
 
         Returns:

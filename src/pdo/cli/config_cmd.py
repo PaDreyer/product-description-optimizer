@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 import tomllib
 from pathlib import Path
+from typing import Any
 
 import click
 
@@ -14,7 +15,11 @@ from pdo.exceptions import ConfigError
 
 
 def _load_config_dict(path: Path) -> dict[str, str]:
-    """Safely load the [pdo] section from the TOML config file."""
+    """Safely load the [pdo] section from the TOML config file.
+
+    Handles both nested TOML structures (from dot-separated keys) and flat keys.
+    Flattens nested structures to dot-separated strings.
+    """
     if not path.exists():
         return {}
 
@@ -24,6 +29,25 @@ def _load_config_dict(path: Path) -> dict[str, str]:
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
+        pdo_section = data.get("pdo", {})
+        if not isinstance(pdo_section, dict):
+            raise ConfigError(
+                f"Invalid config format in {path}: [pdo] section must be a dictionary."
+            )
+
+        # Flatten nested structures (from unquoted dot keys) to dot-separated keys
+        def flatten_dict(d: dict[str, Any], parent_key: str = "") -> dict[str, str]:
+            """Recursively flatten nested dicts to dot-separated keys."""
+            result: dict[str, str] = {}
+            for key, value in d.items():
+                full_key = f"{parent_key}.{key}" if parent_key else key
+                if isinstance(value, dict):
+                    result.update(flatten_dict(value, full_key))
+                else:
+                    result[full_key] = str(value)
+            return result
+
+        return flatten_dict(pdo_section)
     except tomllib.TOMLDecodeError as e:
         raise ConfigError(f"Failed to parse config file at {path}: {e}") from e
     except OSError as e:
@@ -45,9 +69,11 @@ def _save_config_dict(path: Path, items: dict[str, str]) -> None:
         # Sort keys for consistent output
         for k in sorted(items.keys()):
             v = items[k]
+            # Quote key if it contains a dot to prevent TOML from creating nested structures
+            key_name = f'"{k}"' if "." in k else k
             # Basic escaping for string values
             escaped_v = v.replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(f'{k} = "{escaped_v}"')
+            lines.append(f'{key_name} = "{escaped_v}"')
 
         with path.open("w", encoding="utf-8") as fh:
             fh.write("\n".join(lines) + "\n")

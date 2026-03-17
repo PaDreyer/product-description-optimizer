@@ -5,8 +5,10 @@ This guide walks you through installing the Product Description Optimizer, setti
 ## Prerequisites
 
 - **Python 3.12+**
-- **Google Gemini API key** — get one at [aistudio.google.com](https://aistudio.google.com/apikey) OR
-- **Local LLM Server** (e.g., Ollama, LM Studio) running an OpenAI-compatible endpoint
+- **API Key for one of**:
+  - Google Gemini API — get one at [aistudio.google.com](https://aistudio.google.com/apikey)
+  - ZhipuAI API (GLM-4) — get one at [open.bigmodel.cn](https://open.bigmodel.cn)
+  - **OR** a local LLM Server (e.g., Ollama, LM Studio)
 
 ## 1. Installation
 
@@ -20,8 +22,8 @@ python -m venv venv
 source venv/bin/activate      # macOS / Linux
 # venv\Scripts\activate       # Windows
 
-# Install with Gemini support
-pip install -e '.[gemini,openai,dev]'
+# Install with all optimizer support
+pip install -e '.[gemini,zhipuai,openai,dev]'
 ```
 
 Verify the installation:
@@ -55,11 +57,23 @@ docker rm -f pdo-daemon
 
 ## 2. Set Your API Key
 
+**Option A: ZhipuAI (GLM-4)**
+```bash
+export ZHIPUAI_API_KEY="your-key-here"
+# OR
+pdo config set zhipuai.api_key "your-key-here"
+```
+
+**Option B: Google Gemini**
 ```bash
 export GEMINI_API_KEY="your-key-here"
+# OR
+pdo config set gemini.api_key "your-key-here"
+```
 
-# OR for Local LLMs (e.g., Ollama):
-pdo config set local_llm_address http://127.0.0.1:11434/v1
+**Option C: Local LLM**
+```bash
+pdo config set local_llm.address http://127.0.0.1:11434/v1
 ```
 
 > **Tip:** Add this to your shell profile (`~/.bashrc`, `~/.zshrc`) so you don't have to set it every session.
@@ -129,10 +143,12 @@ pdo status
 Start the AI optimization:
 
 ```bash
-# Start and watch progress live (uses gemini by default if key is set)
+# Use ZhipuAI (glm-4) by default if key is set
 pdo optimize --watch
 
-# Or use the local LLM optimizer:
+# Or explicitly choose a backend:
+pdo optimize --optimizer zhipuai --watch
+pdo optimize --optimizer gemini --watch
 pdo optimize --optimizer local_llm --watch
 ```
 
@@ -200,7 +216,9 @@ pdo daemon stop
 |---------|----------|
 | `Daemon is not running` | Run `pdo daemon start` first |
 | `Worker is busy` | Wait for current operation, or run `pdo reset --yes` |
-| `GEMINI_API_KEY not set` | Export the key: `export GEMINI_API_KEY="..."` |
+| `ZHIPUAI_API_KEY not set` | Export the key: `export ZHIPUAI_API_KEY="..."` or use `pdo config set zhipuai.api_key <key>` |
+| `GEMINI_API_KEY not set` | Export the key: `export GEMINI_API_KEY="..."` or use `pdo config set gemini.api_key <key>` |
+| `zhipuai not installed` | Run `pip install -e '.[zhipuai,dev]'` |
 | `google-genai not installed` | Run `pip install -e '.[gemini,openai]'` |
 | Optimization is slow | Normal — ~2–5s per product with two validation API calls |
 
@@ -218,10 +236,15 @@ pdo daemon stop
   pdo config set validate_temperature 0.1   # QA step (default 0.1)
   ```
 
-- **Switch optimizer** — use a local model instead of Gemini:
+- **Switch optimizer** — use a different backend:
   ```bash
-  pdo config set local_llm_address http://127.0.0.1:11434/v1
-  pdo config set local_llm_model llama3.2
+  # Use ZhipuAI with custom model
+  pdo config set zhipuai.model glm-4-plus
+  pdo optimize --optimizer zhipuai --watch
+
+  # Use local model
+  pdo config set local_llm.address http://127.0.0.1:11434/v1
+  pdo config set local_llm.model llama3.2
   pdo optimize --optimizer local_llm --watch
   ```
 
@@ -229,8 +252,8 @@ pdo daemon stop
   ```toml
   [pdo]
   optimizer            = "local_llm"
-  local_llm_address    = "http://127.0.0.1:11434/v1"
-  local_llm_model      = "llama3.2"
+  local_llm.address    = "http://127.0.0.1:11434/v1"
+  local_llm.model      = "llama3.2"
   target_sentences     = "2"
   optimize_temperature = "0.4"
   validate_temperature = "0.1"

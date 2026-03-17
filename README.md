@@ -10,7 +10,7 @@ Import product data from CSV, optimize descriptions with Google Gemini, validate
 
 ## Features
 
-- **Two-step AI optimization** — Gemini or Local LLMs rewrite descriptions, then validate them for false promises and hallucinated features
+- **Two-step AI optimization** — Gemini, ZhipuAI, or Local LLMs rewrite descriptions, then validate them for false promises and hallucinated features
 - **Daemon architecture** — background process handles long-running operations while the CLI stays responsive
 - **Pause / resume / reset** — full control over the pipeline at any time
 - **Crash-resilient** — per-product commits mean you never lose progress
@@ -23,17 +23,19 @@ Import product data from CSV, optimize descriptions with Google Gemini, validate
 # Clone and install
 git clone <repo-url> && cd product_description_optimizer
 python -m venv venv && source venv/bin/activate
-pip install -e '.[gemini,openai,dev]'
+pip install -e '.[gemini,zhipuai,openai,dev]'
 
-# Set your Gemini API key
-export GEMINI_API_KEY="your-key-here"
+# Set your API key (choose one)
+export ZHIPUAI_API_KEY="your-key-here"  # For ZhipuAI
+# OR
+export GEMINI_API_KEY="your-key-here"  # For Gemini
 
-# Start the daemon
+# Start daemon
 pdo daemon start --foreground
 
 # In another terminal:
 pdo import products.csv -m product_id:ProduktID -m description:Beschreibung -m context:Marke
-pdo optimize --optimizer gemini --watch
+pdo optimize --watch
 pdo export optimized_output.csv
 ```
 
@@ -120,8 +122,8 @@ pdo import catalogue.csv \
                                    │  │  │
                           ┌────────┘  │  └────────┐
                           ▼           ▼            ▼
-                     Importer    Optimizer     Exporter
-                       (CSV→DB) (Gemini/Local LLM) (DB→CSV)
+                      Importer    Optimizer     Exporter
+                        (CSV→DB) (Gemini/ZhipuAI/Local LLM) (DB→CSV)
                           │           │            │
                           └─────┬─────┘────────────┘
                                 ▼
@@ -139,14 +141,15 @@ PDO uses layered configuration (highest priority first):
 
 **Key environment variables:**
 
-| Variable                | Default                       | Description                      |
-|-------------------------|-------------------------------|----------------------------------|
-| `GEMINI_API_KEY`        | —                             | Google Gemini API key            |
+| Variable               | Default                       | Description                      |
+|------------------------|-------------------------------|----------------------------------|
+| `ZHIPUAI_API_KEY`     | —                             | ZhipuAI API key (GLM models)    |
+| `GEMINI_API_KEY`       | —                             | Google Gemini API key            |
 | `PDO_LOCAL_LLM_ADDRESS` | `http://127.0.0.1:11434/v1`  | Local OpenAI-compatible endpoint |
-| `PDO_LOCAL_LLM_MODEL`   | `local-model`                 | Model name to pass to the server |
-| `PDO_DATA_DIR`          | `~/.pdo/data`                 | Database & PID storage           |
-| `PDO_LOG_DIR`           | `~/.pdo/logs`                 | Log file directory               |
-| `PDO_SOCKET_PATH`       | `~/.pdo/pdo.sock`             | Daemon socket path               |
+| `PDO_LOCAL_LLM_MODEL`  | `local-model`                 | Model name to pass to the server |
+| `PDO_DATA_DIR`         | `~/.pdo/data`                 | Database & PID storage           |
+| `PDO_LOG_DIR`          | `~/.pdo/logs`                 | Log file directory               |
+| `PDO_SOCKET_PATH`      | `~/.pdo/pdo.sock`             | Daemon socket path               |
 
 ## Optimizer Tuning
 
@@ -178,14 +181,27 @@ pdo config set validate_temperature 0.1   # keep deterministic
 
 ### Local LLM connection
 
-| Config key            | Default                      | Description |
-|-----------------------|------------------------------|-------------|
-| `local_llm_address`   | `http://127.0.0.1:11434/v1` | Base URL of the OpenAI-compatible server |
-| `local_llm_model`     | `local-model`                | Model identifier passed in the request |
+| Config key           | Default                      | Description |
+|----------------------|------------------------------|-------------|
+| `local_llm.address`  | `http://127.0.0.1:11434/v1` | Base URL of the OpenAI-compatible server |
+| `local_llm.model`    | `local-model`                | Model identifier passed in the request |
 
 ```bash
-pdo config set local_llm_address http://127.0.0.1:11434/v1
-pdo config set local_llm_model llama3.2
+pdo config set local_llm.address http://127.0.0.1:11434/v1
+pdo config set local_llm.model llama3.2
+```
+
+### ZhipuAI connection
+
+| Config key           | Default | Description |
+|----------------------|---------|-------------|
+| `zhipuai.api_key`    | (none)  | ZhipuAI API key |
+| `zhipuai.model`      | `glm-4` | ZhipuAI model identifier |
+
+```bash
+export ZHIPUAI_API_KEY="your-key"
+pdo config set zhipuai.model glm-4-plus
+pdo optimize --optimizer zhipuai --watch
 ```
 
 View or verify all active settings at any time:

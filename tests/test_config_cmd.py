@@ -46,17 +46,17 @@ def test_config_set_and_get(tmp_path: Path, monkeypatch) -> None:
     assert "/tmp/custom_logs" in result.output
 
     # 5. Test setting another key (should append, not overwrite the first one)
-    result = runner.invoke(cli, ["config", "set", "gemini_api_key", "secret123"])
+    result = runner.invoke(cli, ["config", "set", "gemini.api_key", "secret123"])
     assert result.exit_code == 0
 
     # Verify both exist
     with cfg_file.open("rb") as f:
         data = tomllib.load(f)
         assert data["pdo"]["log_dir"] == "/tmp/custom_logs"
-        assert data["pdo"]["gemini_api_key"] == "secret123"
+        assert data["pdo"]["gemini.api_key"] == "secret123"
 
     # 6. Test getting the second key
-    result = runner.invoke(cli, ["config", "get", "gemini_api_key"])
+    result = runner.invoke(cli, ["config", "get", "gemini.api_key"])
     assert result.exit_code == 0
     assert "secret123" in result.output
 
@@ -67,13 +67,13 @@ def test_config_set_and_get(tmp_path: Path, monkeypatch) -> None:
     with cfg_file.open("rb") as f:
         data = tomllib.load(f)
         assert data["pdo"]["log_dir"] == "/var/log/pdo"
-        assert data["pdo"]["gemini_api_key"] == "secret123"
+        assert data["pdo"]["gemini.api_key"] == "secret123"
 
     # 8. Test listing all keys
     result = runner.invoke(cli, ["config", "list"])
     assert result.exit_code == 0
     assert "log_dir = /var/log/pdo" in result.output
-    assert "gemini_api_key = secret123" in result.output
+    assert "gemini.api_key = secret123" in result.output
 
     # 9. Test listing empty config
     cfg_file.unlink()

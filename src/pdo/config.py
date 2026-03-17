@@ -13,6 +13,7 @@ import os
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 _DEFAULT_BASE_DIR = Path.home() / ".pdo"
 
@@ -32,6 +33,8 @@ class PdoConfig:
 def _read_config_file(path: Path) -> dict[str, str]:
     """Read and return the TOML config file as a flat dict.
 
+    Flattens nested structures (from unquoted dot keys) to dot-separated strings.
+
     Returns an empty dict if the file does not exist or is malformed.
     """
     if not path.is_file():
@@ -39,7 +42,21 @@ def _read_config_file(path: Path) -> dict[str, str]:
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
-        return {k: str(v) for k, v in data.get("pdo", {}).items()}
+        pdo_section = data.get("pdo", {})
+
+        # Flatten nested structures to dot-separated keys
+        def flatten_dict(d: dict[str, Any], parent_key: str = "") -> dict[str, str]:
+            """Recursively flatten nested dicts to dot-separated keys."""
+            result: dict[str, str] = {}
+            for key, value in d.items():
+                full_key = f"{parent_key}.{key}" if parent_key else key
+                if isinstance(value, dict):
+                    result.update(flatten_dict(value, full_key))
+                else:
+                    result[full_key] = str(value)
+            return result
+
+        return flatten_dict(pdo_section)
     except (tomllib.TOMLDecodeError, OSError):
         return {}
 

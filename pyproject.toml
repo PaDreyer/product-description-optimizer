@@ -20,6 +20,9 @@ dependencies = [
 gemini = [
     "google-genai>=1.0",
 ]
+zhipuai = [
+    "zhipuai>=2.0",
+]
 openai = [
     "openai>=1.0",
 ]

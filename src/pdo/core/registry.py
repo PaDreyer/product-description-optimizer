@@ -30,29 +30,43 @@ class OptimizerInfo:
     reason: str = ""
 
 
-def _get_opt(config: "PdoConfig | None", key: str, default: Any = None) -> Any:
+def _get_opt(config: PdoConfig | None, key: str, default: Any = None) -> Any:
     """Safely read a config option, returning *default* when config is absent."""
     if config is None:
         return default
     return config.options.get(key) or default
 
 
-def _check_gemini_available(config: "PdoConfig | None" = None) -> tuple[bool, str]:
+def _check_gemini_available(config: PdoConfig | None = None) -> tuple[bool, str]:
     """Check whether the Gemini backend can be used."""
     try:
         import google.genai  # noqa: F401
     except ImportError:
         return False, "google-genai not installed (pip install 'pdo[gemini]')"
 
-    api_key = _get_opt(config, "gemini_api_key", "") or os.environ.get("GEMINI_API_KEY", "")
+    api_key = _get_opt(config, "gemini.api_key", "") or os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return False, "GEMINI_API_KEY not set in config or environment"
     return True, ""
 
 
-def list_optimizers(config: "PdoConfig | None" = None) -> list[OptimizerInfo]:
+def _check_zhipuai_available(config: PdoConfig | None = None) -> tuple[bool, str]:
+    """Check whether the ZhipuAI backend can be used."""
+    try:
+        import zhipuai  # noqa: F401
+    except ImportError:
+        return False, "zhipuai not installed (pip install 'pdo[zhipuai]')"
+
+    api_key = _get_opt(config, "zhipuai.api_key", "") or os.environ.get("ZHIPUAI_API_KEY", "")
+    if not api_key:
+        return False, "ZHIPUAI_API_KEY not set in config or environment"
+    return True, ""
+
+
+def list_optimizers(config: PdoConfig | None = None) -> list[OptimizerInfo]:
     """Return metadata for every registered optimizer."""
     gemini_ok, gemini_reason = _check_gemini_available(config)
+    zhipuai_ok, zhipuai_reason = _check_zhipuai_available(config)
     return [
         OptimizerInfo(
             name="local_llm",
@@ -66,6 +80,12 @@ def list_optimizers(config: "PdoConfig | None" = None) -> list[OptimizerInfo]:
             reason=gemini_reason,
         ),
         OptimizerInfo(
+            name="zhipuai",
+            description="ZhipuAI GLM models (glm-4, glm-4-plus) — two-step optimize + validate",
+            available=zhipuai_ok,
+            reason=zhipuai_reason,
+        ),
+        OptimizerInfo(
             name="dummy",
             description="Uppercase placeholder for development and testing",
             available=True,
@@ -73,7 +93,7 @@ def list_optimizers(config: "PdoConfig | None" = None) -> list[OptimizerInfo]:
     ]
 
 
-def get_default_optimizer_name(config: "PdoConfig | None" = None) -> str:
+def get_default_optimizer_name(config: PdoConfig | None = None) -> str:
     """Return the name of the best available optimizer.
 
     Returns ``"gemini"`` when the Gemini SDK and API key are present,
@@ -83,7 +103,7 @@ def get_default_optimizer_name(config: "PdoConfig | None" = None) -> str:
     return "gemini" if gemini_ok else "dummy"
 
 
-def _common_optimizer_kwargs(config: "PdoConfig | None") -> dict[str, Any]:
+def _common_optimizer_kwargs(config: PdoConfig | None) -> dict[str, Any]:
     """Extract the shared optimizer kwargs from config."""
     return {
         "target_sentences": int(_get_opt(config, "target_sentences", 3)),
@@ -93,11 +113,11 @@ def _common_optimizer_kwargs(config: "PdoConfig | None") -> dict[str, Any]:
     }
 
 
-def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any):
+def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
     """Instantiate an optimizer by name.
 
     Args:
-        name: Registry name (``"gemini"``, ``"local_llm"``, or ``"dummy"``).
+        name: Registry name (``"gemini"``, ``"zhipuai"``, ``"local_llm"``, or ``"dummy"``).
         config: Optional PdoConfig instance for fetching connection settings.
         **kwargs: Passed through to the optimizer constructor
             (e.g. ``api_key`` for Gemini).
@@ -125,13 +145,13 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
 
         api_key = (
             kwargs.get("api_key")
-            or _get_opt(config, "gemini_api_key", "")
+            or _get_opt(config, "gemini.api_key", "")
             or os.environ.get("GEMINI_API_KEY", "")
         )
         if not api_key:
             msg = (
                 "Gemini optimizer requires an API key. "
-                "Set GEMINI_API_KEY or pass --api-key on the CLI."
+                "Set GEMINI_API_KEY or use 'pdo config set gemini.api_key <key>'"
             )
             raise ValueError(msg)
         return GeminiOptimizer(api_key=api_key, **_common_optimizer_kwargs(config))
@@ -146,9 +166,38 @@ def create_optimizer(name: str, config: "PdoConfig | None" = None, **kwargs: Any
             )
             raise ValueError(msg) from exc
 
-        address = _get_opt(config, "local_llm_address", _DEFAULT_LOCAL_LLM_ADDRESS)
-        model = _get_opt(config, "local_llm_model", _DEFAULT_LOCAL_LLM_MODEL)
+        address = _get_opt(config, "local_llm.address", _DEFAULT_LOCAL_LLM_ADDRESS)
+        model = _get_opt(config, "local_llm.model", _DEFAULT_LOCAL_LLM_MODEL)
         return LocalLLMOptimizer(address=address, model=model, **_common_optimizer_kwargs(config))
+
+    if name == "zhipuai":
+        try:
+            from pdo.core.zhipuai_optimizer import ZhipuAIOptimizer
+        except ImportError as exc:
+            msg = (
+                "ZhipuAI optimizer requires the zhipuai package. "
+                "Install with: pip install 'pdo[zhipuai]'"
+            )
+            raise ValueError(msg) from exc
+
+        api_key = (
+            kwargs.get("api_key")
+            or _get_opt(config, "zhipuai.api_key", "")
+            or os.environ.get("ZHIPUAI_API_KEY", "")
+        )
+        if not api_key:
+            msg = (
+                "ZhipuAI optimizer requires an API key. "
+                "Set ZHIPUAI_API_KEY or use 'pdo config set zhipuai.api_key <key>'"
+            )
+            raise ValueError(msg)
+
+        model = _get_opt(config, "zhipuai.model", "glm-4")
+        return ZhipuAIOptimizer(
+            api_key=api_key,
+            model=model,
+            **_common_optimizer_kwargs(config),
+        )
 
     known = [o.name for o in list_optimizers(config)]
     msg = f"Unknown optimizer: {name!r}. Available: {', '.join(known)}"

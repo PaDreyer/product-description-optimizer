@@ -83,8 +83,40 @@ src/pdo/
 3. Use `self._retry_delay(attempt)` for exponential backoff
 4. Register in `registry.py`:
    - Add availability check: `_check_<name>_available()`
-   - Add to `create_optimizer()` function
+   - Add to `list_optimizers()` with dot-namespace config keys (e.g., `optimizer_name.api_key`)
+   - Add factory logic in `create_optimizer()` using dot-namespace pattern
 5. Add optional dependency to `pyproject.toml` [project.optional-dependencies]
+
+### Example: ZhipuAI Optimizer
+
+See `src/pdo/core/zhipuai_optimizer.py` for a complete implementation using:
+- Dot-namespace config: `zhipuai.api_key`, `zhipuai.model`
+- Environment variable: `ZHIPUAI_API_KEY`
+- SDK: `zhipuai` (OpenAI-compatible API)
+
+## Configuration Naming Convention
+
+Use dot-namespace for optimizer-specific settings:
+
+| Pattern | Example | CLI Command |
+|---------|---------|-------------|
+| `optimizer_name.setting` | `zhipuai.api_key` | `pdo config set zhipuai.api_key <key>` |
+| `optimizer_name.setting` | `local_llm.address` | `pdo config set local_llm.address <url>` |
+| `optimizer_name.setting` | `gemini.api_key` | `pdo config set gemini.api_key <key>` |
+
+**Environment variables** follow provider's convention:
+- ZhipuAI: `ZHIPUAI_API_KEY`
+- Gemini: `GEMINI_API_KEY`
+- (Local LLMs typically use config only)
+
+**Config file** (`~/.pdo/config.toml`):
+```toml
+[pdo]
+optimizer = "zhipuai"
+zhipuai.api_key = "..."
+zhipuai.model = "glm-4"
+local_llm.address = "http://127.0.0.1:11434/v1"
+```
 
 ## Development Checklist
 
@@ -93,6 +125,10 @@ src/pdo/
 - ✅ Run tests for changed modules
 - ✅ Follow existing patterns (don't reinvent)
 - ✅ Ensure ≥80% coverage maintained
+- 📝 **NOTE:** For local development, use the project venv at `venv/`:
+  ```bash
+  source venv/bin/activate
+  ```
 
 ## References
 

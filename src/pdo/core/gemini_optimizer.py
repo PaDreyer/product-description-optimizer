@@ -31,7 +31,7 @@ class GeminiOptimizer(BaseLLMOptimizer):
 
     Args:
         model: Gemini model name (default: ``gemini-2.0-flash``).
-        api_key: API key. Falls back to ``GEMINI_API_KEY`` env var.
+        api_key: API key. Falls back to ``GEMINI_API_KEY`` env var or ``gemini.api_key`` config.
         optimize_temperature: Sampling temperature for generation (default: 0.4).
         validate_temperature: Sampling temperature for validation (default: 0.1).
         max_retries: Number of retries on transient API errors.

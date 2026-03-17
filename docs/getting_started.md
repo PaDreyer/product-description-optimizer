@@ -32,7 +32,7 @@ pdo version
 # → pdo 0.1.0
 ```
 
-### Alternative: Install via Docker
+## 2. Docker Installation
 
 If you prefer not to install Python dependencies locally, you can run the entire PDO stack through Docker:
 
@@ -55,7 +55,7 @@ When you are finished, you can stop and remove the container:
 docker rm -f pdo-daemon
 ```
 
-## 2. Set Your API Key
+## 3. Set Your API Key
 
 **Option A: ZhipuAI (GLM-4)**
 ```bash
@@ -80,7 +80,7 @@ pdo config set local_llm.address http://127.0.0.1:11434/v1
 
 Without the key, PDO falls back to a dummy optimizer that uppercases text — useful for testing the pipeline, but not for real optimizations.
 
-## 3. Prepare Your CSV
+## 4. Prepare Your CSV
 
 PDO works with any CSV file. You tell it which columns to use via **column mappings**.
 
@@ -96,7 +96,7 @@ PDO works with any CSV file. You tell it which columns to use via **column mappi
 - Add as many `context` mappings as you like — more context = better AI output
 - Default delimiter is `;` (change with `-d ","`)
 
-## 4. Start the Daemon
+## 5. Start the Daemon
 
 The daemon runs in the background and does all the heavy work:
 
@@ -113,7 +113,7 @@ Check it's running:
 pdo daemon status
 ```
 
-## 5. Import Products
+## 6. Import Products
 
 Open a second terminal (if using foreground mode) and import:
 
@@ -138,7 +138,7 @@ Check progress:
 pdo status
 ```
 
-## 6. Optimize
+## 7. Optimize
 
 Start the AI optimization:
 
@@ -168,7 +168,7 @@ pdo resume         # Resume where you left off
 pdo status         # Check progress at any time
 ```
 
-## 7. Export Results
+## 8. Export Results
 
 Once optimization is complete (or even partway through — it exports whatever is done):
 
@@ -185,7 +185,7 @@ To include failed products:
 pdo export output.csv --include-errors
 ```
 
-## 8. Starting Over
+## 9. Starting Over
 
 When your product data changes:
 
@@ -196,7 +196,7 @@ pdo optimize --watch
 pdo export output.csv
 ```
 
-## Viewing Logs
+## 10. Viewing Logs
 
 ```bash
 pdo logs              # Last 50 lines
@@ -204,13 +204,13 @@ pdo logs -n 200       # Last 200 lines
 pdo logs -f           # Follow (live tail)
 ```
 
-## Stopping the Daemon
+## 11. Stopping the Daemon
 
 ```bash
 pdo daemon stop
 ```
 
-## Troubleshooting
+## 12. Troubleshooting
 
 | Problem | Solution |
 |---------|----------|
@@ -222,7 +222,9 @@ pdo daemon stop
 | `google-genai not installed` | Run `pip install -e '.[gemini,openai]'` |
 | Optimization is slow | Normal — ~2–5s per product with two validation API calls |
 
-## What's Next
+## 13. What's Next
+
+Complete command reference: [CLI Reference](docs/cli_reference.md)
 
 - **Tune output quality** — control length and style without touching code:
   ```bash

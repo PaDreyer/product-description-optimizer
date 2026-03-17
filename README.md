@@ -39,52 +39,7 @@ pdo optimize --watch
 pdo export optimized_output.csv
 ```
 
-→ See [Getting Started](docs/getting_started.md) for a detailed walkthrough.
-
-### Using Docker
-
-Alternatively, you can run the PDO daemon and CLI entirely within Docker, without installing Python dependencies locally.
-
-```bash
-# Build the image
-docker build -t pdo-daemon .
-
-# Start the daemon container (mounts current directory to /app/workspace)
-docker run -d --name pdo-daemon -v $(pwd):/app/workspace pdo-daemon
-
-# Jump into the container shell to run CLI commands
-docker exec -it pdo-daemon bash
-
-# Inside the container:
-# root@container:/app# pdo import /app/workspace/products.csv ...
-
-# Stop and remove the container when finished
-docker rm -f pdo-daemon
-```
-
-## CLI Reference
-
-| Command                  | Description                                  |
-|--------------------------|----------------------------------------------|
-| `pdo config set <k> <v>` | Set a configuration key to a given value     |
-| `pdo config get <key>`   | Get the value of a configuration key         |
-| `pdo config list`        | List all configuration keys and values       |
-| `pdo daemon start`       | Start the background daemon                  |
-| `pdo daemon stop`        | Stop the daemon                              |
-| `pdo daemon status`      | Check if the daemon is running               |
-| `pdo daemon repair`      | Repair unresponsive daemon (clean PID/socket)|
-| `pdo import <file> [-l N]` | Import products (optionally limit N)         |
-| `pdo optimize [--watch]` | Start optimization (optionally watch progress) |
-| `pdo optimizer list`     | List available optimizer backends            |
-| `pdo export <file>`      | Export results to CSV                        |
-| `pdo status`             | Show pipeline progress                       |
-| `pdo pause`              | Pause the current optimization               |
-| `pdo resume`             | Resume a paused optimization                 |
-| `pdo reset [--yes]`      | Stop all operations and clear the database   |
-| `pdo logs [-f] [-n N]`   | View daemon log output                       |
-| `pdo version`            | Print version                                |
-
-All commands support `--help` for detailed usage.
+→ See [Getting Started](docs/getting_started.md) for a detailed walkthrough. Docker is also available - see [Getting Started](docs/getting_started.md).
 
 ## Column Mappings
 
@@ -127,8 +82,10 @@ pdo import catalogue.csv \
                           │           │            │
                           └─────┬─────┘────────────┘
                                 ▼
-                            SQLite DB
+                             SQLite DB
 ```
+
+For complete CLI reference, see [CLI Reference](docs/cli_reference.md).
 
 ## Configuration
 
@@ -138,6 +95,8 @@ PDO uses layered configuration (highest priority first):
 2. Environment variables (`PDO_` prefix)
 3. Config file (`~/.pdo/config.toml`, manage via `pdo config`)
 4. Built-in defaults
+
+→ For deep setup and persistent configuration, see [Getting Started](docs/getting_started.md).
 
 **Key environment variables:**
 
@@ -198,16 +157,19 @@ pdo config set local_llm.model llama3.2
 | `zhipuai.api_key`    | (none)  | ZhipuAI API key |
 | `zhipuai.model`      | `glm-4` | ZhipuAI model identifier |
 
-```bash
-export ZHIPUAI_API_KEY="your-key"
-pdo config set zhipuai.model glm-4-plus
-pdo optimize --optimizer zhipuai --watch
-```
+### Gemini connection
+
+| Config key        | Default | Description |
+|-------------------|---------|-------------|
+| `gemini.api_key`  | (none)  | Google Gemini API key |
+| `gemini.model`    | `gemini-2.0-flash` | Gemini model identifier |
 
 View or verify all active settings at any time:
 ```bash
 pdo config list
 ```
+
+For detailed configuration examples, see [Getting Started](docs/getting_started.md).
 
 ## Development
 
@@ -224,6 +186,28 @@ make test-integration  # integration tests only
 make lint
 make format
 ```
+
+## Contributing
+
+Contributions are welcome! We're happy to review pull requests and help new contributors get started.
+
+**Development setup:**
+```bash
+git clone <repo-url>
+cd product_description_optimizer
+python -m venv venv && source venv/bin/activate
+pip install -e '.[gemini,zhipuai,openai,dev]'
+make test
+```
+
+**Pull requests:**
+- Fork the repository
+- Create a feature branch
+- Ensure tests pass: `make test`
+- Ensure code quality: `make lint`
+- Submit a PR with a clear description
+
+See [AGENTS.md](AGENTS.md) for development conventions and guidelines.
 
 ## License
 

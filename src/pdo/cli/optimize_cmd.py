@@ -16,7 +16,7 @@ from pdo.cli.common import global_options
     "-o",
     "optimizer_name",
     default=None,
-    help="Explicitly choose backend (gemini, local_llm, dummy).",
+    help="Explicitly choose backend (gemini, zhipuai, local_llm, dummy).",
 )
 @global_options()
 @click.pass_context

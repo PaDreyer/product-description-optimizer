@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from pdo.core.csv_format import CsvFormat, detect_format, read_encoding
 from pdo.core.db import Database
 from pdo.exceptions import ImportDataError
 
@@ -47,6 +48,7 @@ def import_csv(
     delimiter: str = ";",
     encoding: str | None = None,
     limit: int | None = None,
+    format_: CsvFormat | None = None,
 ) -> ImportResult:
     """Import a CSV file into the database.
 
@@ -72,7 +74,9 @@ def import_csv(
 
     if csv_path.stat().st_size == 0:
         raise ImportDataError(f"CSV file is empty: {csv_path}")
-    file_encoding = encoding or _detect_encoding(csv_path)
+    detected = format_ or detect_format(csv_path)
+    file_encoding = encoding or read_encoding(detected)
+    parse_options = detected.reader_kwargs() if format_ else {"delimiter": delimiter}
 
     # --- Validate mappings ------------------------------------------------
     id_cols = [m for m in column_mappings if m.role == "product_id"]
@@ -86,11 +90,17 @@ def import_csv(
     context_mappings = [m for m in column_mappings if m.role == "context"]
 
     with csv_path.open(encoding=file_encoding, newline="") as stream:
-        reader = csv.DictReader(stream, delimiter=delimiter)
+        reader = csv.DictReader(stream, **parse_options)
         headers = reader.fieldnames or []
         if not headers:
             raise ImportDataError("CSV has no header row.")
         _validate_columns_exist(column_mappings, headers)
+        if len(set(headers)) != len(headers) or any(not h.strip() for h in headers):
+            raise ImportDataError("CSV-Spaltennamen müssen eindeutig und nicht leer sein.")
+        stored_format = detected.to_dict()
+        stored_format["delimiter"] = parse_options["delimiter"]
+        db.set_metadata("source_format", stored_format)
+        db.set_metadata("source_headers", headers)
 
         db.set_column_mappings(
             [
@@ -147,13 +157,49 @@ def import_csv(
 
 def _detect_encoding(path: Path) -> str:
     """Validate UTF-8 in bounded chunks, falling back to CP1252."""
-    try:
-        with path.open(encoding="utf-8-sig") as stream:
-            while stream.read(64 * 1024):
-                pass
-    except UnicodeDecodeError:
-        return "cp1252"
-    return "utf-8-sig"
+    return read_encoding(detect_format(path))
+
+
+def import_corrections(db: Database, path: Path, format_: CsvFormat) -> int:
+    """Validate an entire correction CSV before atomically updating failed products.
+
+    Args:
+        db: Active batch database.
+        path: CSV containing only corrected source rows.
+        format_: Detected or explicitly selected source dialect.
+
+    Returns:
+        Number of corrected products; their retry remains an explicit action.
+
+    Raises:
+        ImportDataError: For invalid mappings, duplicate IDs, or incomplete rows.
+    """
+    mappings = [ColumnMapping(**m) for m in db.get_column_mappings()]
+    id_cols = [m for m in mappings if m.role == "product_id"]
+    if len(id_cols) != 1:
+        raise ImportDataError("Für Korrekturen ist genau eine eindeutige Produkt-ID-Spalte nötig.")
+    products = []
+    with path.open(encoding=read_encoding(format_), newline="") as stream:
+        reader = csv.DictReader(stream, **format_.reader_kwargs(), strict=True)
+        headers = reader.fieldnames or []
+        if headers != db.get_metadata("source_headers", headers):
+            raise ImportDataError("Die Korrekturdatei muss dieselben Originalspalten enthalten.")
+        _validate_columns_exist(mappings, headers)
+        for number, row in enumerate(reader, 1):
+            if None in row or any(value is None for value in row.values()):
+                raise ImportDataError(f"Unvollständige CSV-Zeile {number}.")
+            products.append(
+                _build_product_dict(
+                    row_number=number,
+                    row=row,
+                    id_cols=id_cols,
+                    desc_cols=[m for m in mappings if m.role == "description"],
+                    context_mappings=[m for m in mappings if m.role == "context"],
+                )
+            )
+    if not products:
+        raise ImportDataError("Die Korrekturdatei enthält keine Produkte.")
+    return db.apply_corrections(products)
 
 
 def _validate_columns_exist(

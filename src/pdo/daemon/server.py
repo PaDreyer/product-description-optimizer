@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import secrets
@@ -18,12 +19,16 @@ from typing import Any
 
 from pdo import __version__
 from pdo.config import PdoConfig, load_config, save_config_values
+from pdo.core.csv_format import CsvFormat
 from pdo.core.db import Database
+from pdo.core.error_groups import ERROR_GROUPS
+from pdo.core.exporter import preview_csv
 from pdo.core.instance_lock import InstanceLock
 from pdo.daemon.endpoint import DaemonEndpoint, remove_endpoint, write_endpoint
 from pdo.daemon.pid import remove_pid, write_pid
 from pdo.daemon.worker import Worker
 from pdo.protocol.messages import (
+    PROTOCOL_REVISION,
     Request,
     Response,
     receive_message,
@@ -222,6 +227,8 @@ class DaemonServer:
             "status": self._handle_status,
             "products": self._handle_products,
             "product": self._handle_product,
+            "settings": self._handle_settings,
+            "export_preview": self._handle_export_preview,
             "pause": self._handle_pause,
             "resume": self._handle_resume,
             "reset": self._handle_reset,
@@ -253,12 +260,14 @@ class DaemonServer:
             delimiter=delimiter,
             limit=limit,
             replace_existing=bool(payload.get("replace_existing", False)),
+            **({"format_": CsvFormat.from_dict(payload["format"])} if "format" in payload else {}),
+            **({"corrections": True} if payload.get("corrections") else {}),
         )
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Import started"})
 
-    def _handle_optimize(self, payload: dict[str, Any]) -> Response:
+    def _handle_settings(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
         if self._worker.is_busy:
             return Response(success=False, error="Worker is busy")
@@ -280,7 +289,28 @@ class DaemonServer:
                 },
             )
             self._worker.update_config(self._config)
-        started = self._worker.start_optimization(optimizer_name=optimizer_name)
+        return Response(success=True)
+
+    def _handle_optimize(self, payload: dict[str, Any]) -> Response:
+        assert self._worker is not None
+        groups = payload.get("retry_groups")
+        if groups is not None and (
+            not isinstance(groups, list)
+            or not groups
+            or len(groups) > len(ERROR_GROUPS)
+            or any(
+                not isinstance(k, str) or k not in ERROR_GROUPS or not ERROR_GROUPS[k][1]
+                for k in groups
+            )
+        ):
+            return Response(success=False, error="Ungültige Auswahl wiederholbarer Fehlergruppen.")
+        response = self._handle_settings(payload)
+        if not response.success:
+            return response
+        started = self._worker.start_optimization(
+            optimizer_name=payload.get("optimizer"),
+            **({"retry_groups": groups} if groups is not None else {}),
+        )
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Optimization started"})
@@ -291,10 +321,35 @@ class DaemonServer:
         if not output_path:
             return Response(success=False, error="Missing 'output_path' in payload")
         include_errors = payload.get("include_errors", False)
-        started = self._worker.start_export(Path(output_path), include_errors=include_errors)
+        format_ = CsvFormat.from_dict(payload["format"]) if "format" in payload else None
+        scope = payload.get("scope")
+        if scope is not None and scope not in {"done", "all", "completed", "errors", "corrections"}:
+            return Response(success=False, error="Ungültiger Exportumfang.")
+        if payload.get("remember_format") and format_:
+            result = self._handle_settings(
+                {"settings": {"export.format": json.dumps(format_.to_dict())}}
+            )
+            if not result.success:
+                return result
+        started = self._worker.start_export(
+            Path(output_path),
+            include_errors=include_errors,
+            format_=format_,
+            scope=scope,
+        )
         if not started:
             return Response(success=False, error="Worker is busy")
         return Response(success=True, data={"message": "Export started"})
+
+    def _handle_export_preview(self, payload: dict[str, Any]) -> Response:
+        assert self._db is not None
+        format_ = CsvFormat.from_dict(payload.get("format", {}))
+        return Response(
+            success=True,
+            data={
+                "text": preview_csv(self._db, format_, payload.get("scope", "done")),
+            },
+        )
 
     def _handle_status(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
@@ -306,7 +361,18 @@ class DaemonServer:
             limit = max(0, min(int(payload.get("limit", 100)), 100))
         except (TypeError, ValueError):
             return Response(success=False, error="Invalid product limit")
-        return Response(success=True, data={"products": self._db.get_product_preview(limit)})
+        offset = max(0, int(payload.get("offset", 0)))
+        status = payload.get("status")
+        if status not in {None, "done", "pending", "processing", "error"}:
+            return Response(success=False, error="Invalid product status")
+        search = str(payload.get("search", ""))[:500]
+        return Response(
+            success=True,
+            data={
+                "products": self._db.get_product_preview(limit, offset, status, search),
+                "total": self._db.count_products(status, search),
+            },
+        )
 
     def _handle_product(self, payload: dict[str, Any]) -> Response:
         assert self._db is not None
@@ -347,7 +413,9 @@ class DaemonServer:
         return Response(success=True, data={"message": "Daemon stopping"})
 
     def _handle_ping(self, payload: dict[str, Any]) -> Response:
-        return Response(success=True, data={"message": "pong"})
+        return Response(
+            success=True, data={"message": "pong", "protocol_revision": PROTOCOL_REVISION}
+        )
 
     # ── Signal handling ──────────────────────────────────────────────
 

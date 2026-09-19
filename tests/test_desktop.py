@@ -7,7 +7,7 @@ import os
 import socket
 import threading
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from pathlib import Path
@@ -190,7 +190,8 @@ def test_desktop_auto_starts_daemon_and_close_leaves_it_running(tmp_path: Path) 
         assert not endpoint_file(config).exists()
 
 
-def test_daemon_launcher_replaces_outdated_daemon(tmp_path: Path) -> None:
+@pytest.mark.parametrize("same_version", [False, True])
+def test_daemon_launcher_replaces_outdated_daemon(tmp_path: Path, same_version: bool) -> None:
     from pdo.daemon.launcher import ensure_daemon_running
 
     config = _config(tmp_path)
@@ -204,7 +205,7 @@ def test_daemon_launcher_replaces_outdated_daemon(tmp_path: Path) -> None:
         nonlocal first_ping
         if action == "ping" and first_ping:
             first_ping = False
-            return Response(success=True, server_version="0.1.0")
+            return Response(success=True, server_version=__version__ if same_version else "0.1.0")
         return original_send_command(action, *args, **kwargs)
 
     try:
@@ -451,7 +452,7 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QAp
         window = DesktopWindow(DesktopSession(config, auto_start=False))
         try:
             assert window.windowTitle().startswith("PDO")
-            assert window.pages.count() == 4
+            assert window.pages.count() == 5
 
             source = tmp_path / "products.csv"
             source.write_text("SKU,Description,Brand\nA1,Blue bag,Example\n", encoding="utf-8")
@@ -460,13 +461,13 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QAp
                 return_value=(str(source), "CSV files (*.csv)"),
             ):
                 window._choose_source()
-            assert window.sample_table.rowCount() == 1
+            assert window.sample_table.rowCount() == 3
             assert len(window._mapping_boxes) == 3
 
             for backend, expected_text in (
-                ("gemini", "cloud provider"),
-                ("local_llm", "server address"),
-                ("dummy", "on this computer"),
+                ("gemini", "Google Gemini"),
+                ("local_llm", "Serveradresse"),
+                ("dummy", "auf diesem Computer"),
             ):
                 window.backend_box.setCurrentIndex(window.backend_box.findData(backend))
                 assert expected_text in window.data_flow_label.text()
@@ -485,12 +486,191 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QAp
             assert "[OPTIMIZED]" in window.detail.toPlainText()
 
             output = tmp_path / "output.csv"
-            window.output_path.setText(str(output))
-            window._start_export()
+            with patch(
+                "pdo.desktop.app.QFileDialog.getSaveFileName", return_value=(str(output), "CSV")
+            ):
+                window._start_export()
             _wait_for_job(window.session)
             window._poll()
             qapp.processEvents()
             assert output.is_file()
+        finally:
+            window._exit_gui()
+
+
+def _process_until(qapp: QApplication, condition: Callable[[], bool]) -> None:
+    """Wait for a GUI callback without blocking Qt event delivery."""
+    deadline = time.monotonic() + 3
+    while not condition() and time.monotonic() < deadline:
+        qapp.processEvents()
+        time.sleep(0.01)
+    assert condition()
+
+
+def test_provider_settings_only_request_relevant_fields(tmp_path: Path, qapp: QApplication) -> None:
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            window.show()
+            window._open_settings()
+            for provider in ("gemini", "zhipuai"):
+                window.backend_box.setCurrentIndex(window.backend_box.findData(provider))
+                assert window.key_input.isVisible()
+                assert not window.address_input.isVisible()
+                assert not window.model_input.isVisible()
+                window.manual_model.setChecked(True)
+                assert window.model_input.isVisible()
+                window.model_input.setText("my-custom-model")
+                assert window._provider_settings()[f"{provider}.model"] == "my-custom-model"
+                window.manual_model.setChecked(False)
+            window.backend_box.setCurrentIndex(window.backend_box.findData("dummy"))
+            assert not window.key_input.isVisible()
+            assert not window.model_input.isVisible()
+            assert not window.address_input.isVisible()
+            assert not window.manual_model.isVisible()
+            window.backend_box.setCurrentIndex(window.backend_box.findData("local_llm"))
+            assert window.address_input.isVisible()
+            assert not window.key_input.isVisible()
+            with patch.object(window.session, "models", return_value=["only-loaded-model"]):
+                window._check_connection()
+                _process_until(qapp, lambda: window._models == ["only-loaded-model"])
+            assert not window.model_box.isVisible()
+            assert not window.model_input.isVisible()
+            assert window._provider_settings()["local_llm.model"] == "only-loaded-model"
+            with patch.object(window.session, "models", return_value=["one", "two"]):
+                window._check_connection()
+                _process_until(qapp, lambda: window._models == ["one", "two"])
+            assert window.model_box.isVisible()
+            window.model_box.setCurrentText("two")
+            window._save_settings()
+            assert (
+                load_config(config_file=config.config_file_path).options["local_llm.model"] == "two"
+            )
+            window._open_settings()
+            window.address_input.setText("http://localhost:5678/v1")
+            assert window.connection_button.isEnabled()
+            with pytest.raises(ValueError, match="Prüfe zuerst"):
+                window._provider_settings()
+            window._cancel_settings()
+            assert window.address_input.text() == "http://127.0.0.1:11434/v1"
+        finally:
+            window._exit_gui()
+
+
+def test_gui_error_groups_retry_correct_and_export_without_touching_successes(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    from PySide6.QtCore import Qt
+
+    from pdo.core.csv_format import CsvFormat
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    source = tmp_path / "source.csv"
+    source.write_text("SKU;Description\nP1;Ready\nP2;Retry\nP3;\n", encoding="utf-8")
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        session = DesktopSession(config, auto_start=False)
+        session.import_file(
+            inspect_csv(source),
+            [
+                {"role": "product_id", "csv_column_name": "SKU", "display_name": "SKU"},
+                {
+                    "role": "description",
+                    "csv_column_name": "Description",
+                    "display_name": "Description",
+                },
+            ],
+        )
+        _wait_for_job(session)
+        session.optimize("dummy", {})
+        _wait_for_job(session)
+        with Database(config.data_dir / "pdo.db") as database:
+            database.update_product_status(2, "error", error_message="Timed out")
+        window = DesktopWindow(session)
+        try:
+            window.show()
+            window.result_tabs.setCurrentIndex(1)
+            assert window.errors_table.rowCount() == 2
+            assert [g["kind"] for g in window._selected_groups()] == ["timeout"]
+            window._select_all_errors(False)
+            assert not window.retry_button.isEnabled()
+            window._select_all_errors(True)
+            assert window.retry_button.isEnabled()
+            window._retry_errors()
+            _wait_for_job(session)
+            window._poll()
+            assert session.status()["progress"]["done"] == 2
+            assert session.status()["error_groups"][0]["kind"] == "missing_data"
+            assert not window.retry_button.isEnabled()
+            correction = tmp_path / "correction.csv"
+            correction.write_text("SKU;Description\nP3;Ergänzte Beschreibung\n", encoding="utf-16")
+            with patch(
+                "pdo.desktop.app.QFileDialog.getOpenFileName", return_value=(str(correction), "CSV")
+            ):
+                window._import_corrections()
+            _wait_for_job(session)
+            window._poll()
+            assert window._selected_groups()[0]["kind"] == "corrected"
+            window._retry_errors()
+            _wait_for_job(session)
+            window._poll()
+            assert session.status()["progress"]["done"] == 3
+            assert session.product(1)["optimized_description"] == "[OPTIMIZED] READY"
+            window.search_input.setText("P3")
+            window._search_products()
+            assert window.results_table.rowCount() == 1
+            assert "ERGÄNZTE" in window.detail.toPlainText()
+            window._open_export("done")
+            format_ = CsvFormat(encoding="utf-16-le", delimiter="\t", bom=True)
+            window.format_editor.set_format(format_)
+            window.format_editor.remember.setChecked(True)
+            window._refresh_export_preview()
+            _process_until(qapp, lambda: window.save_button.isEnabled())
+            output = tmp_path / "export.csv"
+            with patch(
+                "pdo.desktop.app.QFileDialog.getSaveFileName", return_value=(str(output), "CSV")
+            ):
+                window._start_export()
+            _wait_for_job(session)
+            window._poll()
+            assert "Gespeichert:" in window.export_error.text()
+            assert output.read_bytes().startswith(b"\xff\xfe")
+            with output.open(encoding="utf-16", newline="") as stream:
+                rows = list(csv.DictReader(stream, delimiter="\t"))
+            assert len(rows) == 3
+            assert rows[2]["optimized_description"] == "[OPTIMIZED] ERGÄNZTE BESCHREIBUNG"
+            assert '"utf-16-le"' in session.config.options["export.format"]
+            window.prepare_export_button.click()
+            window.format_editor.delimiter.setCurrentIndex(5)
+            window.format_editor.custom.setText("xx")
+            window._refresh_export_preview()
+            assert not window.save_button.isEnabled()
+            assert "einzelne Zeichen" in window.export_error.text()
+            assert window.select_errors.checkState() != Qt.CheckState.PartiallyChecked
+        finally:
+            window._exit_gui()
+
+
+def test_old_poll_response_cannot_complete_a_new_action(tmp_path: Path, qapp: QApplication) -> None:
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            stale = window.session.status()
+            callbacks = []
+            with patch.object(
+                window, "_submit", side_effect=lambda work, done, fail: callbacks.append(done)
+            ):
+                window._poll_async()
+            window._poll()
+            window._pending_action = "import"
+            callbacks[0](stale)
+            assert window._pending_action == "import"
         finally:
             window._exit_gui()
 

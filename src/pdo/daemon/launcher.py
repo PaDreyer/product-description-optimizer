@@ -18,7 +18,7 @@ from pdo.daemon.lifecycle import clean_stale_runtime, lifecycle_lock, stop_proce
 from pdo.daemon.pid import read_pid, wait_for_exit
 from pdo.daemon.startup import wait_for_startup
 from pdo.exceptions import DaemonNotRunningError, InstanceAlreadyRunningError
-from pdo.protocol.messages import Response, receive_message
+from pdo.protocol.messages import PROTOCOL_REVISION, Response, receive_message
 
 
 def ensure_daemon_running(config: PdoConfig, *, timeout: float = 15.0) -> None:
@@ -42,7 +42,11 @@ def _ensure_daemon_running_locked(config: PdoConfig, *, timeout: float) -> None:
     """Inspect, recover, and start the daemon while holding the launch lock."""
     try:
         response = send_command("ping", config=config)
-        if response.success and response.server_version == __version__:
+        if (
+            response.success
+            and response.server_version == __version__
+            and response.data.get("protocol_revision") == PROTOCOL_REVISION
+        ):
             return
         if response.success:
             _stop_outdated_daemon(config, timeout=timeout)
@@ -116,7 +120,11 @@ def _start_detached_daemon(config: PdoConfig, *, timeout: float) -> None:
         response = send_command("ping", config=config)
     except DaemonNotRunningError as exc:
         raise RuntimeError("The PDO daemon reported readiness but cannot be reached.") from exc
-    if not response.success or response.server_version != __version__:
+    if (
+        not response.success
+        or response.server_version != __version__
+        or response.data.get("protocol_revision") != PROTOCOL_REVISION
+    ):
         raise RuntimeError(response.error or "The PDO daemon started with an unexpected version.")
 
 

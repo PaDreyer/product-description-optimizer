@@ -1,18 +1,17 @@
-"""CSV exporter — writes optimized products back to a CSV file.
-
-Reconstructs original CSV columns from the ``raw_data`` JSON blob and
-appends the ``optimized_description`` and ``status`` columns.
-"""
-
 from __future__ import annotations
 
+__doc__ = """Atomic, bounded-memory CSV exports using the same serializer as previews."""
+
 import csv
-import json
+import io
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from pdo.core.csv_format import CsvFormat
 from pdo.core.db import Database
+from pdo.exceptions import ExportError
 
 
 @dataclass(frozen=True)
@@ -23,6 +22,66 @@ class ExportResult:
     output_path: Path = Path()
 
 
+def export_columns(db: Database, scope: str, first: dict[str, Any]) -> list[str]:
+    """Return original columns plus the fields required by the export scope."""
+    original = db.get_metadata("source_headers", list(first.get("raw_data", {})))
+    extras = (
+        []
+        if scope == "corrections"
+        else (
+            ["error_message", "status"]
+            if scope == "errors"
+            else ["optimized_description", "status"]
+        )
+    )
+    headers = list(original)
+    for name in extras:
+        candidate = name
+        if candidate in headers:
+            candidate = f"pdo_{name}"
+            suffix = 2
+            while candidate in headers:
+                candidate = f"pdo_{name}_{suffix}"
+                suffix += 1
+        headers.append(candidate)
+    return headers
+
+
+def export_row(product: dict[str, Any], scope: str, headers: list[str]) -> dict[str, Any]:
+    """Compose a CSV row without modifying the original source values."""
+    result = dict(product["raw_data"])
+    if scope == "corrections":
+        return result
+    key = "error_message" if scope == "errors" else "optimized_description"
+    result[headers[-2]] = (
+        (product.get(key) or "") if key == "error_message" or product["status"] == "done" else ""
+    )
+    result[headers[-1]] = product["status"]
+    return result
+
+
+def preview_csv(db: Database, format_: CsvFormat, scope: str = "done") -> str:
+    """Serialize two actual products and validate their encoding for preview."""
+    products = db.export_page(scope, limit=2)
+    if not products:
+        return "Keine Produkte für diesen Exportumfang."
+    buffer = io.StringIO(newline="")
+    headers = export_columns(db, scope, products[0])
+    writer = csv.DictWriter(buffer, fieldnames=headers, **format_.writer_kwargs())
+    if format_.header:
+        writer.writeheader()
+    for product in products:
+        writer.writerow(export_row(product, scope, headers))
+    text = buffer.getvalue()
+    try:
+        text.encode(format_.encoding, errors="strict")
+    except UnicodeError as exc:
+        raise ExportError(
+            "Die Vorschau enthält Zeichen außerhalb der gewählten Kodierung."
+        ) from exc
+    return text[:40_000]
+
+
 def export_csv(
     db: Database,
     output_path: Path,
@@ -30,75 +89,71 @@ def export_csv(
     include_errors: bool = False,
     delimiter: str = ";",
     encoding: str = "utf-8",
+    format_: CsvFormat | None = None,
+    scope: str | None = None,
 ) -> ExportResult:
-    """Export products from the database to a CSV file.
+    """Write a complete CSV atomically; a failed export leaves existing files intact.
 
     Args:
-        db: An initialised :class:`Database` instance.
-        output_path: Destination file path.
-        include_errors: If *True*, also export products with status ``error``.
-        delimiter: CSV field delimiter (defaults to ``";"`` to match import).
-        encoding: Output file encoding.
+        db: Initialized database.
+        output_path: Destination file, distinct from the imported source.
+        include_errors: Legacy option including completed and failed rows.
+        delimiter: Legacy delimiter setting.
+        encoding: Legacy codec setting.
+        format_: Complete validated CSV format.
+        scope: done, all, completed, errors, or corrections.
 
     Returns:
-        An :class:`ExportResult` with the number of rows exported and the
-        output path.
+        Exported row count and destination path.
+
+    Raises:
+        ExportError: If the format, destination, or character encoding is invalid.
     """
-    db.set_pipeline_state("exporting")
-
-    # Gather products to export
-    products = db.get_all_products(status="done")
-    if include_errors:
-        products.extend(db.get_all_products(status="error"))
-        products.sort(key=lambda p: p["id"])
-
-    if not products:
-        db.set_pipeline_state("done")
-        return ExportResult(total_exported=0, output_path=output_path)
-
-    # Build header from the first product's raw_data keys + extra columns
-    first_raw = _parse_raw_data(products[0].get("raw_data"))
-    original_headers = list(first_raw.keys())
-    extra_headers = ["optimized_description", "status"]
-    all_headers = original_headers + extra_headers
-
+    if format_ is None:
+        bom = encoding in {"utf-8-sig", "utf-16"}
+        codec = {"utf-8-sig": "utf-8", "utf-16": "utf-16-le"}.get(encoding, encoding)
+        format_ = CsvFormat(encoding=codec, delimiter=delimiter, bom=bom)
+    scope = scope or ("completed" if include_errors else "done")
     output_path = Path(output_path)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    with output_path.open("w", newline="", encoding=encoding) as fh:
-        writer = csv.DictWriter(
-            fh,
-            fieldnames=all_headers,
-            delimiter=delimiter,
-            extrasaction="ignore",
-        )
-        writer.writeheader()
-
-        for product in products:
-            raw = _parse_raw_data(product.get("raw_data"))
-            row: dict[str, Any] = {**raw}
-            row["optimized_description"] = product.get("optimized_description", "")
-            row["status"] = product.get("status", "")
-            writer.writerow(row)
-
+    source = db.get_pipeline_state().get("source_file")
+    if source and Path(source).resolve() == output_path.resolve():
+        raise ExportError("Wähle eine neue Ausgabedatei; die Quelldatei bleibt erhalten.")
+    page = db.export_page(scope)
+    if not page:
+        db.set_pipeline_state("done")
+        return ExportResult(output_path=output_path)
+    headers = export_columns(db, scope, page[0])
+    db.set_pipeline_state("exporting")
+    temporary: Path | None = None
+    count = 0
+    try:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding=format_.encoding,
+            errors="strict",
+            newline="",
+            dir=output_path.parent,
+            prefix=".pdo-export-",
+            delete=False,
+        ) as stream:
+            temporary = Path(stream.name)
+            if format_.bom:
+                stream.write("\ufeff")
+            writer = csv.DictWriter(stream, fieldnames=headers, **format_.writer_kwargs())
+            if format_.header:
+                writer.writeheader()
+            while page:
+                for product in page:
+                    writer.writerow(export_row(product, scope, headers))
+                    count += 1
+                page = db.export_page(scope, after_id=page[-1]["id"])
+        temporary.replace(output_path)
+    except (OSError, UnicodeError, csv.Error, ValueError) as exc:
+        raise ExportError(f"CSV-Export fehlgeschlagen: {exc}") from exc
+    finally:
+        if temporary:
+            temporary.unlink(missing_ok=True)
+        db.set_pipeline_state("idle")
     db.set_pipeline_state("done")
-
-    return ExportResult(
-        total_exported=len(products),
-        output_path=output_path,
-    )
-
-
-# ── Private helpers ──────────────────────────────────────────────────────
-
-
-def _parse_raw_data(raw_data: Any) -> dict[str, str]:
-    """Ensure raw_data is a dict (it may already be deserialized or still JSON)."""
-    if isinstance(raw_data, dict):
-        return raw_data
-    if isinstance(raw_data, str):
-        try:
-            return json.loads(raw_data)
-        except (json.JSONDecodeError, TypeError):
-            return {}
-    return {}
+    return ExportResult(count, output_path)

@@ -13,9 +13,10 @@ from pathlib import Path
 from typing import Any
 
 from pdo.config import PdoConfig
+from pdo.core.csv_format import CsvFormat
 from pdo.core.db import Database
 from pdo.core.exporter import export_csv
-from pdo.core.importer import ColumnMapping, import_csv
+from pdo.core.importer import ColumnMapping, import_corrections, import_csv
 from pdo.core.optimizer import Optimizer, run_optimization
 from pdo.core.registry import create_optimizer, get_default_optimizer_name
 from pdo.exceptions import ImportDataError
@@ -54,6 +55,8 @@ class Worker:
         delimiter: str = ";",
         limit: int | None = None,
         replace_existing: bool = False,
+        format_: CsvFormat | None = None,
+        corrections: bool = False,
     ) -> bool:
         """Run the CSV importer in a worker thread.
 
@@ -64,6 +67,8 @@ class Worker:
             limit: Optional maximum number of source rows.
             replace_existing: Import into a temporary database and replace the
                 active batch only after the complete import succeeds.
+            format_: Detected or explicitly chosen CSV encoding and dialect.
+            corrections: Atomically update failed products by unique product ID.
 
         Returns:
             *True* if started, *False* if already busy.
@@ -82,6 +87,12 @@ class Worker:
 
         def _run() -> None:
             try:
+                if corrections:
+                    count = import_corrections(
+                        self._db, csv_path, format_ or CsvFormat(delimiter=delimiter)
+                    )
+                    self._last_result = {"corrected": count}
+                    return
                 if replace_existing:
                     with tempfile.TemporaryDirectory(prefix="pdo-import-") as temp_dir:
                         staging_path = Path(temp_dir) / "staging.db"
@@ -93,6 +104,7 @@ class Worker:
                                 column_mappings=mappings,
                                 delimiter=delimiter,
                                 limit=limit,
+                                format_=format_,
                             )
                         if result.imported_count == 0:
                             detail = f" First error: {result.errors[0]}" if result.errors else ""
@@ -108,6 +120,7 @@ class Worker:
                         column_mappings=mappings,
                         delimiter=delimiter,
                         limit=limit,
+                        format_=format_,
                     )
                 self._last_result = {
                     "total_rows": result.total_rows,
@@ -128,12 +141,14 @@ class Worker:
         self,
         *,
         optimizer_name: str | None = None,
+        retry_groups: list[str] | None = None,
     ) -> bool:
         """Run the optimizer in a worker thread.
 
         Args:
             optimizer_name: Explicit optimizer backend name. When *None*,
-                auto-detects the best available backend.
+                uses the saved backend or auto-detects if configured as auto.
+            retry_groups: Requeue and process only errors from these categories.
 
         Returns *True* if started, *False* if already busy.
         """
@@ -147,11 +162,14 @@ class Worker:
 
         def _run() -> None:
             try:
+                ids = self._db.requeue_errors(retry_groups) if retry_groups is not None else None
                 result = run_optimization(
                     self._db,
                     optimizer,
                     pause_event=self._pause_event,
                     stop_event=self._stop_event,
+                    product_ids=ids,
+                    request_interval=1.0 if retry_groups and "rate_limit" in retry_groups else 0,
                 )
                 self._last_result = {
                     "total": result.total,
@@ -174,9 +192,11 @@ class Worker:
     ) -> Optimizer:
         """Create an optimizer using the registry.
 
-        Falls back to auto-detection when *optimizer_name* is not given.
+        Uses the saved provider, falling back to auto-detection for auto.
         """
-        name = optimizer_name or get_default_optimizer_name(self._config)
+        name = optimizer_name or self._config.optimizer
+        if name == "auto":
+            name = get_default_optimizer_name(self._config)
 
         log.info("Using optimizer: %s, with config", name)
         return create_optimizer(name, config=self._config)
@@ -186,6 +206,8 @@ class Worker:
         output_path: Path,
         *,
         include_errors: bool = False,
+        format_: CsvFormat | None = None,
+        scope: str | None = None,
     ) -> bool:
         """Run the exporter in a worker thread.
 
@@ -196,7 +218,13 @@ class Worker:
 
         def _run() -> None:
             try:
-                result = export_csv(self._db, output_path, include_errors=include_errors)
+                result = export_csv(
+                    self._db,
+                    output_path,
+                    include_errors=include_errors,
+                    format_=format_,
+                    scope=scope,
+                )
                 self._last_result = {
                     "total_exported": result.total_exported,
                     "output_path": str(result.output_path),
@@ -260,6 +288,11 @@ class Worker:
             else pipeline.get("stage", "idle"),
             "progress": progress,
             "last_result": self._last_result,
+            "source_file": pipeline.get("source_file"),
+            "source_format": self._db.get_metadata("source_format"),
+            "error_groups": self._db.get_error_groups(),
+            "can_correct": sum(m["role"] == "product_id" for m in self._db.get_column_mappings())
+            == 1,
         }
 
     # ── Private ──────────────────────────────────────────────────────
@@ -278,6 +311,7 @@ class Worker:
             if self.is_busy:
                 return False
             self._stop_event.clear()
+            self._last_result = {}
             self._last_result = {}
             self._active_stage = stages[name]
             self._thread = threading.Thread(

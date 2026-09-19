@@ -16,6 +16,9 @@ from functools import wraps
 from pathlib import Path
 from typing import Any
 
+from pdo.core.error_groups import ERROR_GROUPS, classify_error
+from pdo.exceptions import ImportDataError
+
 _PREVIEW_TEXT_LIMIT = 250
 _DETAIL_TEXT_LIMIT = 50_000
 _DETAIL_METADATA_LIMIT = 5_000
@@ -78,6 +81,17 @@ class Database:
         """Create tables if they do not already exist (idempotent)."""
         with self._conn:
             self._conn.executescript(_SCHEMA_SQL)
+            columns = {row["name"] for row in self._conn.execute("PRAGMA table_info(products)")}
+            if "error_kind" not in columns:
+                self._conn.execute("ALTER TABLE products ADD COLUMN error_kind TEXT")
+            legacy = self._conn.execute(
+                "SELECT id, error_message FROM products "
+                "WHERE status = 'error' AND error_kind IS NULL"
+            ).fetchall()
+            self._conn.executemany(
+                "UPDATE products SET error_kind = ? WHERE id = ?",
+                [(classify_error(row["error_message"]), row["id"]) for row in legacy],
+            )
 
     # ── Products ─────────────────────────────────────────────────────
 
@@ -131,6 +145,7 @@ class Database:
         *,
         optimized_description: str | None = None,
         error_message: str | None = None,
+        error_kind: str | None = None,
     ) -> None:
         """Update the status (and optionally the optimized description) of a product."""
         with self._conn:
@@ -139,11 +154,18 @@ class Database:
                 UPDATE products
                    SET status = ?,
                        optimized_description = COALESCE(?, optimized_description),
-                       error_message = COALESCE(?, error_message),
+                       error_message = ?,
+                       error_kind = ?,
                        updated_at = CURRENT_TIMESTAMP
                  WHERE id = ?
                 """,
-                (status, optimized_description, error_message, product_id),
+                (
+                    status,
+                    optimized_description,
+                    error_message,
+                    (error_kind or classify_error(error_message)) if status == "error" else None,
+                    product_id,
+                ),
             )
 
     @_serialized
@@ -181,7 +203,9 @@ class Database:
         return [_row_to_dict(r) for r in rows]
 
     @_serialized
-    def get_product_preview(self, limit: int = 100) -> list[dict[str, Any]]:
+    def get_product_preview(
+        self, limit: int = 100, offset: int = 0, status: str | None = None, search: str = ""
+    ) -> list[dict[str, Any]]:
         """Return a bounded sample of products for desktop display.
 
         Args:
@@ -190,21 +214,160 @@ class Database:
         Returns:
             Product records ordered by import order.
         """
+        where, params = self._product_filter(status, search)
         rows = self._conn.execute(
             "SELECT id, substr(product_id_value, 1, ?) AS product_id_value, "
             "substr(original_description, 1, ?) AS original_description, "
             "substr(optimized_description, 1, ?) AS optimized_description, "
             "status, substr(error_message, 1, ?) AS error_message "
-            "FROM products ORDER BY id LIMIT ?",
+            f"FROM products {where} ORDER BY id LIMIT ? OFFSET ?",
             (
                 _PREVIEW_TEXT_LIMIT,
                 _PREVIEW_TEXT_LIMIT,
                 _PREVIEW_TEXT_LIMIT,
                 _PREVIEW_TEXT_LIMIT,
-                max(0, limit),
+                *params,
+                max(0, min(limit, 100)),
+                max(0, offset),
             ),
         ).fetchall()
         return [dict(row) for row in rows]
+
+    def _product_filter(self, status: str | None, search: str) -> tuple[str, list[Any]]:
+        conditions, params = [], []
+        if status:
+            conditions.append("status = ?")
+            params.append(status)
+        if search:
+            conditions.append(
+                "(instr(product_id_value, ?) > 0 OR instr(original_description, ?) > 0)"
+            )
+            params.extend([search, search])
+        return ("WHERE " + " AND ".join(conditions) if conditions else ""), params
+
+    @_serialized
+    def count_products(self, status: str | None = None, search: str = "") -> int:
+        """Return the count matching a paginated product query."""
+        where, params = self._product_filter(status, search)
+        return self._conn.execute(f"SELECT COUNT(*) FROM products {where}", params).fetchone()[0]
+
+    @_serialized
+    def get_product(self, product_id: int) -> dict[str, Any] | None:
+        """Read one complete product for internal pipeline processing."""
+        row = self._conn.execute("SELECT * FROM products WHERE id = ?", (product_id,)).fetchone()
+        return _row_to_dict(row) if row else None
+
+    @_serialized
+    def get_error_groups(self) -> list[dict[str, Any]]:
+        """Aggregate all failed products, independent of the displayed page."""
+        rows = self._conn.execute(
+            "SELECT COALESCE(error_kind, 'other') AS kind, COUNT(*) AS count "
+            "FROM products WHERE status = 'error' GROUP BY kind ORDER BY count DESC"
+        ).fetchall()
+        return [
+            {
+                "kind": r["kind"],
+                "count": r["count"],
+                "label": ERROR_GROUPS[r["kind"]][0],
+                "retryable": ERROR_GROUPS[r["kind"]][1],
+                "guidance": ERROR_GROUPS[r["kind"]][2],
+            }
+            for r in rows
+        ]
+
+    @_serialized
+    def requeue_errors(self, kinds: list[str]) -> list[int]:
+        """Atomically requeue selected error groups and return their internal IDs.
+
+        Raises:
+            ValueError: For unknown or non-retryable groups.
+        """
+        if not kinds or any(k not in ERROR_GROUPS or not ERROR_GROUPS[k][1] for k in kinds):
+            raise ValueError("Wähle mindestens eine wiederholbare Fehlergruppe.")
+        placeholders = ",".join("?" for _ in kinds)
+        with self._conn:
+            ids = [
+                r[0]
+                for r in self._conn.execute(
+                    "SELECT id FROM products WHERE status = 'error' "
+                    f"AND error_kind IN ({placeholders})",
+                    kinds,
+                )
+            ]
+            self._conn.execute(
+                "UPDATE products SET status = 'pending', error_kind = NULL, error_message = NULL, "
+                "updated_at = CURRENT_TIMESTAMP "
+                f"WHERE status = 'error' AND error_kind IN ({placeholders})",
+                kinds,
+            )
+        return ids
+
+    @_serialized
+    def apply_corrections(self, products: list[dict[str, Any]]) -> int:
+        """Apply a validated correction batch by unique product ID, preserving successes.
+
+        Raises:
+            ImportDataError: If an ID is duplicate, unknown, or not an error row.
+        """
+        seen: set[str] = set()
+        with self._conn:
+            for product in products:
+                key = product["product_id_value"]
+                if not key or key in seen:
+                    raise ImportDataError(f"Fehlende oder doppelte Produkt-ID: {key!r}")
+                seen.add(key)
+                matches = self._conn.execute(
+                    "SELECT id, status FROM products WHERE product_id_value = ?", (key,)
+                ).fetchall()
+                if len(matches) != 1 or matches[0]["status"] != "error":
+                    raise ImportDataError(f"Produkt-ID {key!r} ist nicht eindeutig fehlerhaft.")
+                if not product["original_description"].strip() and not product["context_data"]:
+                    raise ImportDataError(f"Produkt {key!r} enthält weiterhin keine Quelldaten.")
+                self._conn.execute(
+                    "UPDATE products SET raw_data = ?, original_description = ?, context_data = ?, "
+                    "error_kind = 'corrected', error_message = 'Quelldaten korrigiert', "
+                    "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+                    (
+                        json.dumps(product["raw_data"], ensure_ascii=False),
+                        product["original_description"],
+                        json.dumps(product["context_data"] or {}),
+                        matches[0]["id"],
+                    ),
+                )
+        return len(products)
+
+    @_serialized
+    def set_metadata(self, key: str, value: Any) -> None:
+        """Persist batch metadata as JSON."""
+        with self._conn:
+            self._conn.execute(
+                "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
+                (key, json.dumps(value, ensure_ascii=False)),
+            )
+
+    @_serialized
+    def get_metadata(self, key: str, default: Any = None) -> Any:
+        """Read persisted batch metadata."""
+        row = self._conn.execute("SELECT value FROM metadata WHERE key = ?", (key,)).fetchone()
+        return json.loads(row[0]) if row else default
+
+    @_serialized
+    def export_page(self, scope: str, after_id: int = 0, limit: int = 500) -> list[dict[str, Any]]:
+        """Read a bounded page for exports, preserving source row order."""
+        filters = {
+            "done": "status = 'done'",
+            "all": "1 = 1",
+            "completed": "status IN ('done', 'error')",
+            "errors": "status = 'error'",
+            "corrections": "status = 'error' AND error_kind = 'missing_data'",
+        }
+        if scope not in filters:
+            raise ValueError("Ungültiger Exportumfang.")
+        rows = self._conn.execute(
+            f"SELECT * FROM products WHERE id > ? AND ({filters[scope]}) ORDER BY id LIMIT ?",
+            (after_id, max(0, min(limit, 500))),
+        ).fetchall()
+        return [_row_to_dict(row) for row in rows]
 
     @_serialized
     def get_product_detail(self, product_id: int) -> dict[str, Any] | None:
@@ -350,7 +513,8 @@ class Database:
                     UPDATE products
                        SET status = 'pending',
                            optimized_description = NULL,
-                           error_message = NULL;
+                           error_message = NULL,
+                           error_kind = NULL;
                     UPDATE pipeline_state
                        SET stage = 'idle',
                            processed_count = 0;
@@ -362,6 +526,7 @@ class Database:
                     DROP TABLE IF EXISTS column_mappings;
                     DROP TABLE IF EXISTS products;
                     DROP TABLE IF EXISTS pipeline_state;
+                    DROP TABLE IF EXISTS metadata;
                     """
                 )
         if not keep:
@@ -389,6 +554,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
 # ── SQL ──────────────────────────────────────────────────────────────
 
 _SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS products (
     id                     INTEGER PRIMARY KEY AUTOINCREMENT,
     source_row_number      INTEGER NOT NULL,
@@ -399,10 +565,14 @@ CREATE TABLE IF NOT EXISTS products (
     status                 TEXT    NOT NULL DEFAULT 'pending'
                            CHECK (status IN ('pending', 'processing', 'done', 'error')),
     error_message          TEXT,
+    error_kind             TEXT,
     context_data           TEXT    NOT NULL DEFAULT '{}',  -- JSON of extra context fields
     created_at             TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at             TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+CREATE INDEX IF NOT EXISTS products_status_id ON products(status, id);
+CREATE INDEX IF NOT EXISTS products_external_id ON products(product_id_value);
 
 CREATE TABLE IF NOT EXISTS pipeline_state (
     id               INTEGER PRIMARY KEY CHECK (id = 1),  -- singleton row

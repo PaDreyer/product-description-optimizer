@@ -14,6 +14,10 @@ from typing import Any, Self
 from pdo import __version__
 from pdo.exceptions import ProtocolError
 
+# Bump when clients require new daemon handlers, even between app releases.
+# Ping and stop remain compatible so an old daemon can be replaced safely.
+PROTOCOL_REVISION = 1
+
 # Maximum message size (1 MiB) — prevents unbounded reads.
 _MAX_MSG_SIZE = 1 * 1024 * 1024
 

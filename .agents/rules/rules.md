@@ -197,13 +197,12 @@ product_description_optimizer/
 
 - Commit messages follow **Conventional Commits** (`feat:`, `fix:`, `chore:`, `docs:`, etc.).
 - One logical change per commit — avoid monolithic commits.
-- Use feature branches and keep `main` stable.
+- Work on the current branch. Create or switch branches only when the user explicitly requests it.
 
 ### Commit Flow
 
 After every completed implementation (feature, fix, refactor, etc.):
 
-1. **Create a branch** — use a descriptive name with the appropriate prefix (`feat/`, `fix/`, `chore/`, `docs/`, etc.).
-2. **Ask the user** — present the change and ask if it's ready to commit. Do **not** commit without confirmation.
-3. **On approval** — stage, commit (Conventional Commits message), merge to `main` with `--no-ff`, and stay on `main`.
-4. **On rejection** — apply the requested fixes first, then ask again.
+1. **Ask the user** — present the change and ask if it's ready to commit. Do **not** commit without confirmation.
+2. **On approval** — stage and commit (Conventional Commits message) on the current branch. Merge only when the user explicitly requests it.
+3. **On rejection** — apply the requested fixes first, then ask again.

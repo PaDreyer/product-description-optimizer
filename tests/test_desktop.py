@@ -97,6 +97,42 @@ def test_inspect_csv_detects_format_and_roles(tmp_path: Path) -> None:
     ]
 
 
+def test_configure_application_sets_icon(qapp: QApplication) -> None:
+    from pdo.desktop import app as desktop_app
+
+    configured_app = MagicMock()
+
+    desktop_app._configure_application(configured_app)
+
+    configured_app.setApplicationName.assert_called_once_with("PDO")
+    icon = configured_app.setWindowIcon.call_args.args[0]
+    assert not icon.isNull()
+
+
+def test_linux_desktop_identity_requires_packaged_install(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from pdo.desktop import app as desktop_app
+
+    monkeypatch.setattr(desktop_app.sys, "platform", "linux")
+    monkeypatch.setattr(desktop_app.sys, "frozen", True, raising=False)
+    with (
+        patch.object(desktop_app, "QApplication") as qt_application,
+        patch.object(desktop_app, "QStandardPaths") as standard_paths,
+    ):
+        standard_paths.locate.return_value = "/installed/desktop-entry"
+
+        desktop_app._prepare_linux_desktop_identity()
+
+        qt_application.setDesktopFileName.assert_called_once_with("io.github.PaDreyer.pdo")
+        assert standard_paths.locate.call_args.args[1] == "io.github.PaDreyer.pdo.desktop"
+
+        qt_application.setDesktopFileName.reset_mock()
+        monkeypatch.setattr(desktop_app.sys, "frozen", False)
+        desktop_app._prepare_linux_desktop_identity()
+        qt_application.setDesktopFileName.assert_not_called()
+
+
 def test_config_settings_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "config.toml"
     save_config_values(path, {"gemini.api_key": 'quoted"value', "optimizer": "gemini"})

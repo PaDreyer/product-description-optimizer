@@ -12,7 +12,7 @@ from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtCore import QObject, QStandardPaths, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QImage
 from PySide6.QtWidgets import (
     QApplication,
@@ -52,6 +52,9 @@ from pdo.desktop.session import CsvPreview, DesktopSession, inspect_csv, suggest
 from pdo.exceptions import PdoError
 
 log = logging.getLogger(__name__)
+
+APPLICATION_NAME = "PDO"
+LINUX_DESKTOP_FILE_NAME = "io.github.PaDreyer.pdo"
 
 STYLESHEET = """
 QWidget { font-size: 14px; }
@@ -112,6 +115,27 @@ QLabel#success { color: #8ED7B0; background: #18352C; border-radius: 6px; paddin
 QSpinBox { background: #171F30; color: #EFF2FA; padding: 8px; }
 
 """
+
+
+def _application_icon() -> QIcon:
+    """Load the icon used by the application and its windows."""
+    return QIcon(str(files("pdo.desktop").joinpath("logo.png")))
+
+
+def _prepare_linux_desktop_identity() -> None:
+    """Set the packaged app ID before Qt connects to the host portal."""
+    if sys.platform != "linux" or not getattr(sys, "frozen", False):
+        return
+    desktop_entry = f"{LINUX_DESKTOP_FILE_NAME}.desktop"
+    location = QStandardPaths.StandardLocation.ApplicationsLocation
+    if QStandardPaths.locate(location, desktop_entry):
+        QApplication.setDesktopFileName(LINUX_DESKTOP_FILE_NAME)
+
+
+def _configure_application(app: QApplication) -> None:
+    """Configure application-wide identity and icon settings."""
+    app.setApplicationName(APPLICATION_NAME)
+    app.setWindowIcon(_application_icon())
 
 
 def _label(text: str, kind: str | None = None) -> QLabel:
@@ -191,7 +215,7 @@ class DesktopWindow(QMainWindow):
         self.setMinimumSize(960, 700)
         self.resize(1120, 850)
         self.setStyleSheet(STYLESHEET)
-        icon = QIcon(str(files("pdo.desktop").joinpath("logo.png")))
+        icon = _application_icon()
         self.setWindowIcon(icon)
         self._tray = self._create_tray(icon)
         root = QWidget()
@@ -1595,7 +1619,9 @@ def main() -> int:
         assert OpenAI(base_url="http://127.0.0.1:1/v1", api_key="package-smoke-test").chat
         assert OpenAI(base_url="http://127.0.0.1:1/v1", api_key="package-smoke-test").responses
         assert ZhipuAI(api_key="package-smoke-test.package-smoke-test").chat
+        _prepare_linux_desktop_identity()
         app = QApplication(["pdo-smoke-test"])
+        _configure_application(app)
         with tempfile.TemporaryDirectory(prefix="pdo-smoke-") as temp_dir:
             base = Path(temp_dir)
             session = DesktopSession(
@@ -1618,8 +1644,9 @@ def main() -> int:
             assert not endpoint_file(session.config).exists()
         app.quit()
         return 0
+    _prepare_linux_desktop_identity()
     app = QApplication(sys.argv)
-    app.setApplicationName("PDO")
+    _configure_application(app)
     app.setStyle("Fusion")
     app.setStyleSheet(STYLESHEET)
     try:

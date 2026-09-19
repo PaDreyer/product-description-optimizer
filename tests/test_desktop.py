@@ -498,6 +498,82 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QAp
             window._exit_gui()
 
 
+def test_combo_popup_container_uses_the_dark_theme(qapp: QApplication) -> None:
+    """Keep the platform-owned margins around selector lists out of the light theme."""
+    from pdo.desktop.controls import combo
+
+    selector = combo([("Erste Option", "first"), ("Zweite Option", "second")])
+    try:
+        selector.show()
+        selector.showPopup()
+        qapp.processEvents()
+
+        popup = selector.view().window()
+        image = popup.grab().toImage()
+        assert "#171F30" in popup.styleSheet()
+        dark_popup_colors = {"#171f30", "#33415a"}
+        assert image.pixelColor(image.width() // 2, 1).name() in dark_popup_colors
+        assert image.pixelColor(image.width() // 2, image.height() - 2).name() in dark_popup_colors
+    finally:
+        selector.hidePopup()
+        selector.close()
+
+
+def test_checked_checkbox_has_a_high_contrast_checkmark(qapp: QApplication) -> None:
+    """Show an unambiguous checkmark instead of relying on the platform checkbox theme."""
+    from pdo.desktop.app import STYLESHEET
+    from pdo.desktop.controls import checkbox
+
+    selector = checkbox("Aktiviert")
+    selector.setStyleSheet(STYLESHEET)
+    selector.setChecked(True)
+    try:
+        selector.show()
+        qapp.processEvents()
+
+        image = selector.grab().toImage()
+        pixels = {
+            image.pixelColor(x, y).name()
+            for x in range(image.width())
+            for y in range(image.height())
+        }
+        assert "#7563d7" in pixels
+        assert "#ffffff" in pixels
+    finally:
+        selector.close()
+
+
+def test_unchecked_checkbox_covers_the_native_indicator_frame(qapp: QApplication) -> None:
+    """Avoid a second, light platform frame around the custom empty checkbox."""
+    from PySide6.QtWidgets import QStyle, QStyleOptionButton
+
+    from pdo.desktop.app import STYLESHEET
+    from pdo.desktop.controls import checkbox
+
+    selector = checkbox("Nicht aktiviert")
+    selector.setStyleSheet(STYLESHEET)
+    try:
+        selector.show()
+        qapp.processEvents()
+
+        option = QStyleOptionButton()
+        selector.initStyleOption(option)
+        indicator = selector.style().subElementRect(
+            QStyle.SubElement.SE_CheckBoxIndicator, option, selector
+        )
+        image = selector.grab().toImage()
+        pixels = {
+            image.pixelColor(x, y).name()
+            for x in range(indicator.left(), indicator.right() + 1)
+            for y in range(indicator.top(), indicator.bottom() + 1)
+        }
+        assert "#171f30" in pixels
+        assert "#647695" in pixels
+        assert "#bcbcbc" not in pixels
+    finally:
+        selector.close()
+
+
 def _process_until(qapp: QApplication, condition: Callable[[], bool]) -> None:
     """Wait for a GUI callback without blocking Qt event delivery."""
     deadline = time.monotonic() + 3

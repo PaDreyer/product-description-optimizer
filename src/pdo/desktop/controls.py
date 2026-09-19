@@ -4,7 +4,8 @@ __doc__ = "Reusable controls for the approved desktop workflow."
 
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QPointF, QSize, Qt, Signal
+from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -15,12 +16,63 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPushButton,
     QSizePolicy,
+    QStyle,
+    QStyleOptionButton,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from pdo.core.csv_format import CsvFormat
+
+COMBO_POPUP_STYLESHEET = """
+    background: #171F30;
+    border: 1px solid #33415A;
+"""
+
+
+class StyledCheckBox(QCheckBox):
+    """Checkbox with a high-contrast checked state in the dark desktop theme."""
+
+    def paintEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
+        """Paint the platform control, then replace its indicator with a clear checkmark."""
+        super().paintEvent(event)
+
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        indicator = self.style().subElementRect(
+            QStyle.SubElement.SE_CheckBoxIndicator, option, self
+        )
+        outline = indicator.adjusted(1, 1, -1, -1)
+        checked = self.checkState() == Qt.CheckState.Checked
+        enabled = self.isEnabled()
+        border = "#B3A4FF" if checked and enabled else "#647695"
+        background = "#7563D7" if checked and enabled else "#171F30"
+        checkmark = "#FFFFFF" if enabled else "#EFF2FA"
+        if checked and not enabled:
+            background = "#46536A"
+
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        # Cover the native indicator completely before drawing our theme. This
+        # prevents its light frame from peeking out around an empty checkbox.
+        painter.fillRect(indicator, QColor(background))
+        painter.setPen(QPen(QColor(border), 2))
+        painter.setBrush(QColor(background))
+        painter.drawRoundedRect(outline, 4, 4)
+        if checked:
+            painter.setPen(
+                QPen(QColor(checkmark), 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap)
+            )
+            painter.drawLine(
+                QPointF(outline.left() + 4, outline.center().y()),
+                QPointF(outline.center().x() - 1, outline.bottom() - 4),
+            )
+            painter.drawLine(
+                QPointF(outline.center().x() - 1, outline.bottom() - 4),
+                QPointF(outline.right() - 3, outline.top() + 4),
+            )
+        painter.end()
 
 
 def label(text: str, kind: str | None = None) -> QLabel:
@@ -42,9 +94,18 @@ def button(text: str, callback: Any, primary: bool = False) -> QPushButton:
     return result
 
 
+def checkbox(text: str) -> QCheckBox:
+    """Build a high-contrast checkbox for the dark desktop theme."""
+    return StyledCheckBox(text)
+
+
 def combo(items: list[tuple[str, Any]]) -> QComboBox:
     """Build a selector with stable data values independent of translated labels."""
     result = QComboBox()
+    # Qt renders the list inside a separate popup container. It does not inherit
+    # the parent window's stylesheet, which otherwise leaves its top and bottom
+    # margins in the platform default (white on common Linux themes).
+    result.view().window().setStyleSheet(COMBO_POPUP_STYLESHEET)
     for text, value in items:
         result.addItem(text, value)
     return result
@@ -165,8 +226,8 @@ class CsvFormatEditor(QWidget):
         self.escape = combo(
             [("Anführungszeichen verdoppeln", True), ("Mit Backslash maskieren", False)]
         )
-        self.bom = QCheckBox("Kodierungsmarkierung (BOM) schreiben")
-        self.header = QCheckBox("Spaltennamen in erster Zeile ausgeben")
+        self.bom = checkbox("Kodierungsmarkierung (BOM) schreiben")
+        self.header = checkbox("Spaltennamen in erster Zeile ausgeben")
         for index, (title, widget) in enumerate(
             (
                 ("Zeilenende", self.newline),
@@ -182,7 +243,7 @@ class CsvFormatEditor(QWidget):
         advanced.addWidget(self.bom, 4, 0, 1, 2)
         advanced.addWidget(self.header, 5, 0, 1, 2)
         form.addWidget(self.advanced)
-        self.remember = QCheckBox("Dieses Format für weitere Exporte merken")
+        self.remember = checkbox("Dieses Format für weitere Exporte merken")
         form.addWidget(self.remember)
         restore = button("Quellformat übernehmen", lambda: self.set_format(self.source_format))
         restore.setObjectName("quiet")

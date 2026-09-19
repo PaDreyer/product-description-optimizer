@@ -16,7 +16,6 @@ from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
 from PySide6.QtGui import QAction, QIcon, QImage
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
     QComboBox,
     QFileDialog,
     QFormLayout,
@@ -48,7 +47,7 @@ from pdo.core.provider_defaults import (
     OPENAI_MODEL,
     ZHIPUAI_MODEL,
 )
-from pdo.desktop.controls import ContentTabs, CsvFormatEditor, button, combo
+from pdo.desktop.controls import ContentTabs, CsvFormatEditor, button, checkbox, combo
 from pdo.desktop.session import CsvPreview, DesktopSession, inspect_csv, suggest_role
 from pdo.exceptions import PdoError
 
@@ -85,6 +84,7 @@ QComboBox QAbstractItemView {
     background: #171F30; color: #EFF2FA; selection-background-color: #344866;
 }
 QCheckBox { color: #EFF2FA; spacing: 10px; }
+QCheckBox::indicator { width: 18px; height: 18px; }
 QTableWidget {
     background: #171F30; alternate-background-color: #1B2436; color: #EFF2FA;
     gridline-color: #33415A; border: 1px solid #33415A; border-radius: 7px;
@@ -460,7 +460,7 @@ class DesktopWindow(QMainWindow):
             )
         )
         actions = QHBoxLayout()
-        self.select_errors = QCheckBox("Alle wiederholbaren Gruppen auswählen")
+        self.select_errors = checkbox("Alle wiederholbaren Gruppen auswählen")
         self.select_errors.setChecked(True)
         self.select_errors.clicked.connect(self._select_all_errors)
         actions.addWidget(self.select_errors, 1)
@@ -601,9 +601,9 @@ class DesktopWindow(QMainWindow):
         form.addRow(self.connection_button)
         self.connection_label = _label("", "muted")
         form.addRow(self.connection_label)
-        self.model_box = QComboBox()
+        self.model_box = combo([])
         form.addRow("Modell auswählen", self.model_box)
-        self.manual_model = QCheckBox("Modell manuell festlegen · Erweitert")
+        self.manual_model = checkbox("Modell manuell festlegen · Erweitert")
         form.addRow(self.manual_model)
         self.model_input = QLineEdit()
         self.model_input.setPlaceholderText("Modellkennung des Anbieters")

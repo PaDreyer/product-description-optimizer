@@ -47,7 +47,8 @@ jobs:
       - name: Run tests
         env:
           QT_QPA_PLATFORM: offscreen
-        run: "$RUNNER_TEMP/pdo-test-venv/bin/python" -m pytest tests/ -q
+        run: |
+          "$RUNNER_TEMP/pdo-test-venv/bin/python" -m pytest tests/ -q
 
   linux:
     name: Build AppImage and Debian package

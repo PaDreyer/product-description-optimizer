@@ -32,7 +32,7 @@ def test_response_carries_server_version():
 
 
 def test_daemon_rejects_version_mismatch():
-    """Ensure the DaemonServer rejects Requests with differing client_versions."""
+    """Keep control actions stable but reject versioned data operations."""
     server = DaemonServer()
     server._worker = MagicMock()
 
@@ -42,8 +42,10 @@ def test_daemon_rejects_version_mismatch():
     assert valid_resp.success is True
 
     # Invalid
-    invalid_req = Request(action="ping", client_version="0.0.1-old")
-    invalid_resp = server._dispatch(invalid_req)
+    old_ping = server._dispatch(Request(action="ping", client_version="0.0.1-old"))
+    assert old_ping.success is True
+
+    invalid_resp = server._dispatch(Request(action="status", client_version="0.0.1-old"))
     assert invalid_resp.success is False
     assert "Version mismatch" in invalid_resp.error
     assert "0.0.1-old" in invalid_resp.error
@@ -54,7 +56,7 @@ def test_daemon_rejects_version_mismatch():
 @patch("pdo.cli.client.receive_message")
 def test_send_command_version_mismatch_from_server(mock_recv, mock_send, mock_connect):
     """Ensure send_command correctly surfaces the server's rejection payload."""
-    mock_connect.return_value = MagicMock()
+    mock_connect.return_value = (MagicMock(), "test-auth-token")
     mock_recv.return_value = {
         "success": False,
         "error": f"Version mismatch: CLI client is v{__version__}, but daemon is v0.0.1-old.",

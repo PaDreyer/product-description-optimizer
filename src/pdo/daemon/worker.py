@@ -113,12 +113,13 @@ class Worker:
                     "total_rows": result.total_rows,
                     "imported_count": result.imported_count,
                     "skipped_count": result.skipped_count,
-                    "errors": result.errors,
+                    "errors": [error[:1000] for error in result.errors[:100]],
+                    "error_count": len(result.errors),
                 }
                 log.info("Import complete: %s", self._last_result)
             except Exception as exc:
                 log.exception("Import failed")
-                self._last_result = {"error": str(exc)}
+                self._last_result = {"error": str(exc)[:10_000]}
                 self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "import")
@@ -161,7 +162,7 @@ class Worker:
                 log.info("Optimization complete: %s", self._last_result)
             except Exception as exc:
                 log.exception("Optimization failed")
-                self._last_result = {"error": str(exc)}
+                self._last_result = {"error": str(exc)[:10_000]}
                 self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "optimize")
@@ -203,7 +204,7 @@ class Worker:
                 log.info("Export complete: %s", self._last_result)
             except Exception as exc:
                 log.exception("Export failed")
-                self._last_result = {"error": str(exc)}
+                self._last_result = {"error": str(exc)[:10_000]}
                 self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "export")
@@ -232,6 +233,19 @@ class Worker:
         self._stop_event.clear()
         self._last_result = {}
         log.info("Worker state reset")
+
+    def update_config(self, config: PdoConfig) -> None:
+        """Replace provider settings while the worker is idle.
+
+        Args:
+            config: Reloaded application configuration.
+
+        Raises:
+            RuntimeError: If a pipeline job is active.
+        """
+        if self.is_busy:
+            raise RuntimeError("Wait for the current task to finish.")
+        self._config = config
 
     def get_status(self) -> dict[str, Any]:
         """Return a status snapshot."""

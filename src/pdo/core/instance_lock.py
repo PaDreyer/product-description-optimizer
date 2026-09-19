@@ -17,8 +17,11 @@ class InstanceLock:
         self.path = path
         self._stream: BinaryIO | None = None
 
-    def acquire(self) -> None:
-        """Acquire the process lock without waiting.
+    def acquire(self, *, blocking: bool = False) -> None:
+        """Acquire the process lock.
+
+        Args:
+            blocking: Wait for the lock instead of failing immediately.
 
         Raises:
             InstanceAlreadyRunningError: If another process owns the lock.
@@ -31,15 +34,14 @@ class InstanceLock:
         stream = os.fdopen(fd, "r+b")
         try:
             if os.name == "nt":
-                self._acquire_windows(stream)
+                self._acquire_windows(stream, blocking=blocking)
             else:
-                self._acquire_posix(stream)
+                self._acquire_posix(stream, blocking=blocking)
         except OSError as exc:
             stream.close()
             if exc.errno in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
                 raise InstanceAlreadyRunningError(
-                    "The PDO data directory is already in use. Close the desktop "
-                    "application or stop the CLI daemon first."
+                    "The PDO data directory is already owned by another daemon."
                 ) from exc
             raise
         stream.seek(0)
@@ -68,14 +70,15 @@ class InstanceLock:
             stream.close()
 
     @staticmethod
-    def _acquire_posix(stream: BinaryIO) -> None:
+    def _acquire_posix(stream: BinaryIO, *, blocking: bool) -> None:
         """Acquire a POSIX advisory lock."""
         import fcntl
 
-        fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        flags = fcntl.LOCK_EX if blocking else fcntl.LOCK_EX | fcntl.LOCK_NB
+        fcntl.flock(stream.fileno(), flags)
 
     @staticmethod
-    def _acquire_windows(stream: BinaryIO) -> None:
+    def _acquire_windows(stream: BinaryIO, *, blocking: bool) -> None:
         """Acquire a one-byte Windows file lock."""
         import msvcrt
 
@@ -84,7 +87,8 @@ class InstanceLock:
             stream.write(b"\0")
             stream.flush()
         stream.seek(0)
-        msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
+        mode = msvcrt.LK_LOCK if blocking else msvcrt.LK_NBLCK
+        msvcrt.locking(stream.fileno(), mode, 1)
 
     def __enter__(self) -> InstanceLock:
         self.acquire()

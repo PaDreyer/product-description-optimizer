@@ -28,6 +28,11 @@ src/pdo/
 ├── cli/          # CLI commands and utilities
 ├── core/         # Business logic (db, importer, optimizer, exporter)
 ├── daemon/        # Background process (server, worker, pid)
+│   ├── launcher.py   # Shared CLI/GUI detached startup
+│   ├── lifecycle.py  # Safe stop and stale-file cleanup
+│   ├── endpoint.py   # Authenticated loopback endpoint discovery
+│   └── startup.py    # One-shot parent/child startup notification
+├── desktop/       # PySide6 GUI and Linux D-Bus tray
 ├── protocol/      # IPC message definitions
 └── config.py      # Configuration management
 ```

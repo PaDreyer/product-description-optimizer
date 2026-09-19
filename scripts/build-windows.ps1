@@ -30,9 +30,10 @@ try {
     Assert-NativeCommandSucceeded "Installing build dependencies"
 
     $env:QT_QPA_PLATFORM = "offscreen"
-    & $BuildPython -m pytest tests/test_desktop.py tests/test_integration.py `
-        tests/test_importer.py tests/test_exporter.py -q
-    Assert-NativeCommandSucceeded "Desktop and pipeline tests"
+    & $BuildPython -m pytest tests/test_cli.py tests/test_desktop.py `
+        tests/test_daemon.py::TestPidManagement tests/test_protocol.py `
+        tests/test_integration.py tests/test_importer.py tests/test_exporter.py -q
+    Assert-NativeCommandSucceeded "CLI, desktop, and pipeline tests"
 
     $SpecDir = Join-Path $ProjectRoot "build\spec"
     New-Item -ItemType Directory -Path $SpecDir -Force | Out-Null

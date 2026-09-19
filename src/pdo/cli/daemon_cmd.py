@@ -8,7 +8,16 @@ import click
 
 from pdo.cli.common import global_options
 from pdo.config import load_config
+from pdo.daemon.lifecycle import (
+    clean_stale_runtime,
+    lifecycle_lock,
+    stop_process,
+)
+from pdo.daemon.lifecycle import (
+    stop_daemon as stop_shared_daemon,
+)
 from pdo.daemon.pid import is_daemon_running
+from pdo.exceptions import PdoError
 
 
 @click.group()
@@ -23,76 +32,66 @@ def daemon() -> None:
 def start(ctx: click.Context, *, foreground: bool) -> None:
     """Start the daemon process."""
     config = load_config()
-    pid_path = config.data_dir / "daemon.pid"
-
-    if is_daemon_running(pid_path):
-        if ctx.obj.json_output:
-            ctx.obj.out.result(success=False, error="Daemon is already running.")
-        else:
-            ctx.obj.out.print("[yellow]Daemon is already running.[/yellow]")
-        sys.exit(1)
 
     from pdo.daemon.server import DaemonServer
-    from pdo.exceptions import InstanceAlreadyRunningError
 
-    server = DaemonServer(config=config)
+    def report_started() -> None:
+        ctx.obj.out.result(success=True, status="running", msg="[green]Daemon started.[/green]")
 
-    def report_starting() -> None:
-        ctx.obj.out.result(
-            success=True, status="starting daemon", msg="[green]Starting daemon …[/green]"
-        )
+    if not foreground:
+        from pdo.daemon.launcher import ensure_daemon_running
+
+        try:
+            ensure_daemon_running(config)
+        except (RuntimeError, OSError, PdoError) as exc:
+            ctx.obj.out.result(success=False, error=str(exc))
+            sys.exit(1)
+        report_started()
+        return
 
     try:
-        server.start(foreground=foreground, on_starting=report_starting)
-    except InstanceAlreadyRunningError as exc:
+        DaemonServer(config=config).start(on_ready=report_started)
+    except (PdoError, OSError) as exc:
         ctx.obj.out.result(success=False, error=str(exc))
         sys.exit(1)
 
 
 @daemon.command()
 @click.option(
-    "--force", is_flag=True, help="Force kill the daemon process and remove PID/socket files."
+    "--force", is_flag=True, help="Stop the daemon process and clean stale runtime files."
 )
 @global_options()
 @click.pass_context
 def stop(ctx: click.Context, *, force: bool) -> None:
     """Stop the running daemon."""
-    import signal
-
-    from pdo.cli.client import send_command
-    from pdo.daemon.pid import remove_pid, send_signal
-    from pdo.exceptions import DaemonNotRunningError
-
+    config = load_config()
     if force:
-        config = load_config()
-        pid_path = config.data_dir / "daemon.pid"
-        if send_signal(pid_path, signal.SIGTERM):
-            ctx.obj.out.result(
-                success=True, msg="[green]Daemon force-killed using SIGTERM.[/green]"
-            )
-        else:
-            ctx.obj.out.result(success=False, error="Daemon PID not found or permission denied.")
-        # Ensure cleanup
-        remove_pid(pid_path)
-        config.socket_path.unlink(missing_ok=True)
+        try:
+            with lifecycle_lock(config):
+                stopped = stop_process(config, timeout=10.0, force=True)
+                clean_stale_runtime(config)
+        except (RuntimeError, OSError, PdoError) as exc:
+            ctx.obj.out.result(success=False, error=str(exc))
+            sys.exit(1)
+        message = (
+            "Daemon stopped and runtime files cleaned."
+            if stopped
+            else "Stale runtime files cleaned."
+        )
+        ctx.obj.out.result(success=True, msg=f"[green]{message}[/green]")
         return
 
     try:
-        resp = send_command("stop")
-        if not resp.success:
-            ctx.obj.out.result(
-                success=False,
-                error=(
-                    f"Failed to stop via IPC: {resp.error}. "
-                    "Try using 'pdo daemon stop --force' or 'pdo daemon repair'."
-                ),
-            )
-            return
-
+        stopped = stop_shared_daemon(config)
+    except (RuntimeError, OSError, PdoError) as exc:
         ctx.obj.out.result(
-            success=resp.success, error=resp.error, msg="[green]Daemon is stopping.[/green]"
+            success=False,
+            error=(f"{exc} Try using 'pdo daemon stop --force' or 'pdo daemon repair'."),
         )
-    except DaemonNotRunningError:
+        sys.exit(1)
+    if stopped:
+        ctx.obj.out.result(success=True, msg="[green]Daemon stopped.[/green]")
+    else:
         if ctx.obj.json_output:
             ctx.obj.out.result(success=False, error="Daemon is not running.")
         else:
@@ -103,38 +102,19 @@ def stop(ctx: click.Context, *, force: bool) -> None:
 @global_options()
 @click.pass_context
 def repair(ctx: click.Context) -> None:
-    """Repair an unresponsive daemon by forcefully cleaning it up."""
-    import signal
-
-    from pdo.daemon.pid import remove_pid, send_signal
-
+    """Stop an unresponsive daemon, then clean stale runtime files safely."""
     config = load_config()
-    pid_path = config.data_dir / "daemon.pid"
-    socket_path = config.socket_path
-
-    msgs = ["[yellow]Commencing daemon repair …[/yellow]"]
-
-    # Attempt gentle kill first, then forceful
-    killed = False
-    if send_signal(pid_path, signal.SIGTERM):
-        msgs.append("[green]✓ Sent SIGTERM to stale daemon process.[/green]")
-        killed = True
-    elif send_signal(pid_path, signal.SIGKILL):
-        msgs.append("[green]✓ Sent SIGKILL to stale daemon process.[/green]")
-        killed = True
-
-    if not killed:
-        msgs.append("[dim]No running daemon process found to kill.[/dim]")
-
-    remove_pid(pid_path)
-    socket_path.unlink(missing_ok=True)
-    msgs.append("[green]✓ Cleaned up stale PID and socket files.[/green]")
-    msgs.append("[bold green]Repair complete. You can now start the daemon.[/bold green]")
-
-    if ctx.obj.json_output:
-        ctx.obj.out.result(success=True, msg="Daemon repaired")
-    else:
-        ctx.obj.out.print("\n".join(msgs))
+    try:
+        with lifecycle_lock(config):
+            stopped = stop_process(config, timeout=10.0, force=True)
+            clean_stale_runtime(config)
+    except (RuntimeError, OSError, PdoError) as exc:
+        ctx.obj.out.result(success=False, error=str(exc))
+        sys.exit(1)
+    message = (
+        "Daemon stopped and runtime files repaired." if stopped else "Stale runtime files cleaned."
+    )
+    ctx.obj.out.result(success=True, msg=f"[green]{message}[/green]")
 
 
 @daemon.command("status")

@@ -1,12 +1,13 @@
 """IPC protocol — request/response dataclasses and socket helpers.
 
-Messages are serialised as newline-delimited JSON over Unix domain sockets.
+Messages are serialised as newline-delimited JSON over local sockets.
 """
 
 from __future__ import annotations
 
 import json
 import socket
+import time
 from dataclasses import asdict, dataclass, field
 from typing import Any, Self
 
@@ -24,6 +25,7 @@ class Request:
     action: str
     payload: dict[str, Any] = field(default_factory=dict)
     client_version: str = field(default=__version__)
+    auth_token: str = ""
 
     def to_json(self) -> str:
         """Serialise to a JSON string."""
@@ -42,6 +44,7 @@ class Request:
             action=data["action"],
             payload=data.get("payload", {}),
             client_version=data.get("client_version", "unknown"),
+            auth_token=data.get("auth_token", ""),
         )
 
 
@@ -84,13 +87,18 @@ def send_message(sock: socket.socket, msg: Request | Response) -> None:
     sock.sendall(raw.encode("utf-8"))
 
 
-def receive_message(sock: socket.socket) -> dict[str, Any]:
+def receive_message(sock: socket.socket, *, deadline: float | None = None) -> dict[str, Any]:
     """Read a newline-delimited JSON message from the socket.
 
     Returns the parsed dict.  Raises :class:`ProtocolError` on failure.
     """
     buf = b""
     while True:
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise ProtocolError("Message receive deadline exceeded")
+            sock.settimeout(remaining)
         chunk = sock.recv(4096)
         if not chunk:
             if not buf:

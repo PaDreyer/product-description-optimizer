@@ -11,6 +11,8 @@ fi
 
 docker build \
   --file "$project_root/packaging/linux/Dockerfile" \
+  --build-arg "BUILD_UID=$(id -u)" \
+  --build-arg "BUILD_GID=$(id -g)" \
   --tag "$image_name" \
   "$project_root"
 

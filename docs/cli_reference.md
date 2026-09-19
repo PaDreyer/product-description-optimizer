@@ -2,7 +2,7 @@
 
 Complete reference for all `pdo` commands. Every command supports `--help` for inline usage.
 
-The CLI daemon uses Unix sockets and is supported on Linux. Use `pdo-desktop` on Windows.
+The CLI and desktop application use the same daemon on Linux and Windows. Clients reach it through an authenticated, loopback-only TCP endpoint published in the user's PDO data directory. The desktop application starts the daemon automatically. On Windows, install the Python package separately for the CLI; the installer contains the GUI only.
 
 ## Global Options
 
@@ -18,10 +18,10 @@ Place these flags before the command name. `--json` and `--verbose` can also be 
 
 ### `pdo daemon start`
 
-Start the background daemon process.
+Start the background daemon process. The command waits for the daemon to publish its connection details and respond; startup failures are written to `~/.pdo/logs/daemon-startup.log`.
 
 ```bash
-pdo daemon start              # daemonize (background)
+pdo daemon start              # start a detached daemon (Linux and Windows)
 pdo daemon start --foreground  # run in foreground (see logs in real-time)
 ```
 
@@ -30,9 +30,11 @@ pdo daemon start --foreground  # run in foreground (see logs in real-time)
 Stop the running daemon.
 
 ```bash
-pdo daemon stop           # graceful stop via IPC
-pdo daemon stop --force   # SIGTERM the process and clean up PID/socket files
+pdo daemon stop           # graceful stop via IPC; waits for the process to exit
+pdo daemon stop --force   # stop the process, wait for exit, then clean stale files
 ```
+
+If the endpoint is missing, `stop` uses the validated daemon PID to request shutdown. It reports success after the process exits. `--force` also uses SIGKILL when the daemon does not exit after SIGTERM.
 
 ### `pdo daemon status`
 
@@ -40,7 +42,7 @@ Check whether the daemon is running and responding.
 
 ### `pdo daemon repair`
 
-Force-clean a stuck daemon — sends SIGTERM/SIGKILL, then removes stale PID and socket files. Use when the daemon becomes unresponsive.
+Stop an unresponsive daemon with SIGTERM (and SIGKILL if it does not exit), wait for exit, then remove stale PID and endpoint files while holding the data-directory lock. If the process cannot be stopped, its runtime files are preserved.
 
 ---
 
@@ -174,7 +176,6 @@ PDO uses layered configuration (highest priority first):
 | `ZHIPUAI_API_KEY` | — | ZhipuAI API key (GLM models) |
 | `PDO_DATA_DIR` | `~/.pdo/data` | Database & PID storage |
 | `PDO_LOG_DIR` | `~/.pdo/logs` | Log file directory |
-| `PDO_SOCKET_PATH` | `~/.pdo/pdo.sock` | Daemon socket path |
 
 ### Optimizer Tuning
 

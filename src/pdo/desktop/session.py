@@ -1,19 +1,18 @@
-"""Desktop workflow facade built on the existing importer and worker."""
+"""Desktop workflow facade for the shared PDO daemon."""
 
 from __future__ import annotations
 
 import csv
-import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from pdo.config import PdoConfig, load_config, save_config_values
-from pdo.core.db import Database
-from pdo.core.instance_lock import InstanceLock
-from pdo.daemon.pid import is_daemon_running
-from pdo.daemon.worker import Worker
+from pdo.cli.client import send_command
+from pdo.config import PdoConfig, load_config
+from pdo.daemon.launcher import ensure_daemon_running
+from pdo.daemon.lifecycle import stop_daemon as stop_shared_daemon
 from pdo.exceptions import ImportDataError
+from pdo.protocol.messages import Response
 
 
 @dataclass(frozen=True)
@@ -99,94 +98,79 @@ def suggest_role(header: str) -> str:
 
 
 class DesktopSession:
-    """Own the database and background operations for one desktop window."""
+    """Expose daemon operations to one desktop client."""
 
-    def __init__(self, config: PdoConfig | None = None) -> None:
+    def __init__(self, config: PdoConfig | None = None, *, auto_start: bool = True) -> None:
         self.config = config or load_config()
-        if os.name != "nt" and is_daemon_running(self.config.data_dir / "daemon.pid"):
-            raise RuntimeError("Stop the CLI daemon before opening the desktop application.")
-        self.config.data_dir.mkdir(parents=True, exist_ok=True)
-        self._instance_lock = InstanceLock(self.config.data_dir / "pdo.lock")
-        self._instance_lock.acquire()
-        try:
-            self.db = Database(self.config.data_dir / "pdo.db")
-            self.db.initialize()
-            self.db.requeue_processing()
-            self.worker = Worker(self.db, self.config)
-        except Exception:
-            self._instance_lock.release()
-            raise
+        if auto_start:
+            ensure_daemon_running(self.config)
+
+    def _request(self, action: str, payload: dict[str, Any] | None = None) -> Response:
+        """Send one request to the running daemon."""
+        response = send_command(action, payload, config=self.config)
+        if not response.success:
+            raise RuntimeError(response.error or f"Daemon request failed: {action}")
+        return response
 
     def status(self) -> dict[str, Any]:
         """Return current stage, progress, and last operation result."""
-        return self.worker.get_status()
+        return self._request("status").data
 
     def products(self, limit: int = 100) -> list[dict[str, Any]]:
         """Return a bounded set of products for the preview table."""
-        return self.db.get_product_preview(limit)
+        return self._request("products", {"limit": limit}).data["products"]
+
+    def product(self, product_id: int) -> dict[str, Any]:
+        """Return bounded detail text for one product."""
+        return self._request("product", {"id": product_id}).data["product"]
 
     def import_file(self, preview: CsvPreview, mappings: list[dict[str, str]]) -> None:
-        """Replace the current batch and start a CSV import.
-
-        Args:
-            preview: Selected CSV file and detected format.
-            mappings: Column mapping dictionaries for the importer.
-
-        Raises:
-            ValueError: If no description column was selected or a job is active.
-        """
-        if self.worker.is_busy:
-            raise ValueError("Wait for the current task to finish.")
+        """Replace the current batch through the daemon CSV importer."""
         if not any(mapping["role"] == "description" for mapping in mappings):
             raise ValueError("Select at least one description column.")
-        self.worker.reset()
-        self.worker.start_import(
-            preview.path,
-            mappings,
-            delimiter=preview.delimiter,
-            replace_existing=True,
+        self._request(
+            "import",
+            {
+                "csv_path": str(preview.path),
+                "column_mappings": mappings,
+                "delimiter": preview.delimiter,
+                "replace_existing": True,
+            },
         )
 
     def optimize(self, backend: str, settings: dict[str, str]) -> None:
-        """Save provider settings and start the selected optimizer.
-
-        Args:
-            backend: Registry name of the optimizer.
-            settings: Provider options from the desktop form.
-
-        Raises:
-            ValueError: If a job is active or there are no pending products.
-        """
-        if self.worker.is_busy:
-            raise ValueError("Wait for the current task to finish.")
-        if self.db.get_progress()["pending"] == 0:
+        """Save provider settings in the daemon and start optimization."""
+        status = self.status()
+        if status["progress"]["pending"] == 0:
             raise ValueError("Import a CSV file with pending products first.")
-        values = {"optimizer": backend, **settings}
-        save_config_values(self.config.config_file_path, values)
-        self.config = load_config(config_file=self.config.config_file_path)
-        self.worker = Worker(self.db, self.config)
-        self.worker.start_optimization(optimizer_name=backend)
+        self._request("optimize", {"optimizer": backend, "settings": settings})
+        self.config = load_config(
+            config_file=self.config.config_file_path,
+            overrides={
+                "data_dir": str(self.config.data_dir),
+                "log_dir": str(self.config.log_dir),
+                "socket_path": str(self.config.socket_path),
+            },
+        )
 
     def export_file(self, output_path: Path, include_errors: bool = False) -> None:
-        """Start a CSV export into the chosen path."""
-        if self.worker.is_busy:
-            raise ValueError("Wait for the current task to finish.")
-        if self.db.get_progress()["done"] == 0 and not include_errors:
-            raise ValueError("There are no completed products to export.")
-        self.worker.start_export(output_path, include_errors=include_errors)
+        """Start a CSV export through the daemon."""
+        self._request(
+            "export",
+            {"output_path": str(output_path), "include_errors": include_errors},
+        )
 
     def pause(self) -> None:
         """Pause after the currently running product finishes."""
-        self.worker.pause()
+        self._request("pause")
 
     def resume(self) -> None:
         """Resume a paused optimization."""
-        self.worker.resume()
+        self._request("resume")
 
     def close(self) -> None:
-        """Stop background work before closing the database."""
-        self.worker.stop(timeout=5.0)
-        if self.worker.is_busy:
-            raise RuntimeError("The current product is still being processed. Try closing again.")
-        self.db.close()
-        self._instance_lock.release()
+        """Disconnect this client without stopping the daemon."""
+
+    def stop_daemon(self) -> None:
+        """Stop the shared daemon and wait for its process to exit."""
+        stop_shared_daemon(self.config)

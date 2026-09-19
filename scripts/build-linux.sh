@@ -23,7 +23,7 @@ cd "$project_root"
 "$build_python" -m pip install -r requirements-build.txt
 
 QT_QPA_PLATFORM=offscreen "$build_python" -m pytest \
-  tests/test_desktop.py tests/test_integration.py \
+  tests/test_desktop.py tests/test_linux_tray.py tests/test_integration.py \
   tests/test_importer.py tests/test_exporter.py -q
 
 appstreamcli validate --no-net \
@@ -38,6 +38,7 @@ mkdir -p "$project_root/build/spec" "$project_root/dist"
   --specpath "$project_root/build/spec" \
   --paths "$project_root/src" \
   --collect-data pdo.desktop \
+  --collect-all dbus_next \
   --hidden-import google.genai \
   --hidden-import zhipuai \
   --hidden-import openai \

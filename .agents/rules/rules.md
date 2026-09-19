@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-A Python CLI application that optimizes product descriptions from CSV files. The system follows a **daemon/client architecture** (inspired by `docker`, `systemctl`, `journalctl`) where a long-running background daemon performs the work and a lightweight CLI connects to it to issue commands and query status.
+A desktop and CLI application that optimizes product descriptions from CSV files. A long-running daemon performs the work while both interfaces act as clients.
 
 ---
 
@@ -10,12 +10,12 @@ A Python CLI application that optimizes product descriptions from CSV files. The
 
 ### Daemon/Client Model
 
-- **Daemon (`pdod` — Product Description Optimizer Daemon)**: A background process that manages the full optimization lifecycle. It exposes a local communication interface (Unix domain socket or localhost TCP) for the CLI to connect to.
-- **CLI (`pdo`)**: A thin client that connects to the running daemon to send commands and display results. It never performs optimization or database work directly.
+- **Daemon**: A background process that manages the full optimization lifecycle. The CLI and GUI start it through the same detached subprocess launcher.
+- **CLI (`pdo`) and desktop (`pdo-desktop`)**: Clients that connect to the running daemon to send commands and display results. They do not perform optimization or database work directly.
 
 ### Communication
 
-- Use **Unix domain sockets** (preferred) or a local **TCP socket** for IPC between CLI and daemon.
+- Use an authenticated loopback **TCP socket** for IPC on Linux and Windows. The endpoint file in the data directory publishes the port and token with owner-only permissions.
 - Serialize messages using a simple JSON-based request/response protocol.
 - The CLI must handle the case where the daemon is not running and report it cleanly (e.g., `Error: daemon is not running. Start it with 'pdo daemon start'`).
 
@@ -72,8 +72,8 @@ pdo logs --follow         # Follow log output in real-time
 | Terminal output        | `rich`                 | Progress bars, tables, colored output      |
 | Database               | `sqlite3` (stdlib)     | No ORM — use raw SQL with parameterized queries |
 | CSV parsing            | `csv` (stdlib)         | Standard library; `pandas` only if justified |
-| IPC / socket comm      | `socket` (stdlib)      | Unix domain sockets for daemon/CLI comms   |
-| Daemonization          | `daemon` or manual     | Use PID files for process management       |
+| IPC / socket comm      | `socket` (stdlib)      | Authenticated loopback TCP                 |
+| Daemon launch          | `subprocess` (stdlib)  | Shared GUI/CLI launcher with readiness notification |
 | Async (if needed)      | `asyncio`              | Only if the daemon needs concurrent I/O    |
 | Testing                | `pytest`               | With `pytest-cov` for coverage             |
 | Linting                | `ruff`                 | Fast, all-in-one Python linter & formatter |
@@ -130,7 +130,13 @@ product_description_optimizer/
 │       │   ├── __init__.py
 │       │   ├── server.py         # Socket server & request dispatcher
 │       │   ├── worker.py         # Pipeline execution engine
-│       │   └── pid.py            # PID file management
+│       │   ├── pid.py            # PID file management
+│       │   ├── endpoint.py       # Authenticated endpoint discovery
+│       │   ├── entry.py          # Detached process entry point
+│       │   ├── launcher.py       # Shared CLI/GUI startup
+│       │   ├── lifecycle.py      # Shutdown and runtime cleanup
+│       │   └── startup.py        # Readiness notification
+│       ├── desktop/              # PySide6 GUI and Linux tray
 │       ├── core/                 # Shared business logic
 │       │   ├── __init__.py
 │       │   ├── db.py             # Database access layer
@@ -147,8 +153,7 @@ product_description_optimizer/
 │   ├── test_importer.py
 │   ├── test_optimizer.py
 │   └── test_exporter.py
-└── .gemini/
-    └── rules.md
+└── AGENTS.md                    # Current development instructions
 ```
 
 ### Error Handling

@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import tempfile
 from importlib.resources import files
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QObject, Qt, QTimer, Signal, Slot
+from PySide6.QtGui import QAction, QIcon, QImage
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -21,12 +22,14 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
     QScrollArea,
     QStackedWidget,
+    QSystemTrayIcon,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -42,6 +45,9 @@ from pdo.core.provider_defaults import (
     ZHIPUAI_MODEL,
 )
 from pdo.desktop.session import CsvPreview, DesktopSession, inspect_csv, suggest_role
+from pdo.exceptions import PdoError
+
+log = logging.getLogger(__name__)
 
 COLORS = {
     "canvas": "#0B1020",
@@ -131,6 +137,20 @@ def _table(headers: list[str]) -> QTableWidget:
     return table
 
 
+class _UiDispatcher(QObject):
+    """Queue D-Bus tray actions onto the Qt GUI thread."""
+
+    invoke = Signal(object)
+
+    def __init__(self, parent: QObject) -> None:
+        super().__init__(parent)
+        self.invoke.connect(self._invoke)
+
+    @Slot(object)
+    def _invoke(self, callback: Any) -> None:
+        callback()
+
+
 class DesktopWindow(QMainWindow):
     """Main window with import, optimizer, results, and export views."""
 
@@ -142,11 +162,17 @@ class DesktopWindow(QMainWindow):
         self._shown_products: list[dict[str, Any]] = []
         self._last_progress: tuple[int, int, int, int] | None = None
         self._was_busy = False
+        self._daemon_unreachable = False
+        self._quitting = False
+        self._hidden_to_tray = False
+        self._tray_notice_shown = False
         self.setWindowTitle("PDO · Product Description Optimizer")
         self.setMinimumSize(1050, 720)
         self.resize(1240, 820)
-        icon = files("pdo.desktop").joinpath("logo.png")
-        self.setWindowIcon(QIcon(str(icon)))
+        icon = QIcon(str(files("pdo.desktop").joinpath("logo.png")))
+        self.setWindowIcon(icon)
+        self._tray_dispatcher = _UiDispatcher(self)
+        self._tray = self._create_tray(icon)
 
         root = QWidget()
         root.setObjectName("root")
@@ -180,7 +206,7 @@ class DesktopWindow(QMainWindow):
         layout.addWidget(_label("Product Description Optimizer", "muted"))
         layout.addSpacing(30)
         self.nav_buttons: list[QPushButton] = []
-        for index, text in enumerate(("Übersicht", "CSV importieren", "Optimieren", "Exportieren")):
+        for index, text in enumerate(("Overview", "Import CSV", "Optimize", "Export")):
             button = QPushButton(text)
             button.setObjectName("nav")
             button.setCheckable(True)
@@ -188,8 +214,91 @@ class DesktopWindow(QMainWindow):
             layout.addWidget(button)
             self.nav_buttons.append(button)
         layout.addStretch(1)
-        layout.addWidget(_label("Lokaler Arbeitsstand · Version " + __version__, "muted"))
+        self.daemon_label = _label("Connecting to daemon…", "muted")
+        layout.addWidget(self.daemon_label)
         return sidebar
+
+    def _create_tray(self, icon: QIcon) -> Any | None:
+        """Use direct StatusNotifier D-Bus on Linux and Qt tray elsewhere."""
+        if sys.platform == "linux":
+            try:
+                from pdo.desktop.linux_tray import LinuxTrayController, icon_pixmap_from_rgba
+
+                image = icon.pixmap(64, 64).toImage().convertToFormat(QImage.Format.Format_RGBA8888)
+                rgba = bytes(image.bits()[: image.sizeInBytes()])
+                pixmap = icon_pixmap_from_rgba(image.width(), image.height(), rgba)
+                tray = LinuxTrayController(
+                    pixmap,
+                    self._tray_dispatcher.invoke.emit,
+                    self._show_from_tray,
+                    self.quit,
+                )
+                if tray.start():
+                    return tray
+                tray.stop()
+            except Exception:
+                log.exception("Could not start Linux StatusNotifier tray")
+            return None
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            return None
+        tray = QSystemTrayIcon(icon, self)
+        tray.setToolTip("PDO · Product Description Optimizer")
+        tray.setContextMenu(self._build_qt_tray_menu())
+        tray.activated.connect(self._tray_activated)
+        tray.show()
+        return tray
+
+    def _build_qt_tray_menu(self) -> QMenu:
+        """Build the native tray menu used outside Linux."""
+        menu = QMenu(self)
+        open_action = QAction("Open", self)
+        open_action.triggered.connect(self._show_from_tray)
+        menu.addAction(open_action)
+        quit_action = QAction("Quit", self)
+        quit_action.triggered.connect(self.quit)
+        menu.addAction(quit_action)
+        return menu
+
+    def _tray_available(self) -> bool:
+        """Only hide the window when an actual tray host is available."""
+        if self._tray is None:
+            return False
+        if isinstance(self._tray, QSystemTrayIcon):
+            return QSystemTrayIcon.isSystemTrayAvailable() and self._tray.isVisible()
+        return bool(self._tray.available)
+
+    def _show_from_tray(self) -> None:
+        """Restore and focus the main window from the tray."""
+        self._hidden_to_tray = False
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        """Restore the window when the tray icon is clicked."""
+        if reason in (
+            QSystemTrayIcon.ActivationReason.Trigger,
+            QSystemTrayIcon.ActivationReason.DoubleClick,
+        ):
+            self._show_from_tray()
+
+    def _exit_gui(self) -> None:
+        """Close this GUI client without changing daemon state."""
+        self._quitting = True
+        self.close()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def quit(self) -> None:
+        """Stop the daemon and close the GUI from the tray exit action."""
+        try:
+            self.session.stop_daemon()
+        except Exception as exc:
+            self._show_from_tray()
+            self._error(f"Could not stop the daemon: {exc}")
+            return
+        self._exit_gui()
 
     def _page(self, eyebrow: str, heading: str, subtitle: str) -> tuple[QWidget, QVBoxLayout]:
         page = QWidget()
@@ -203,17 +312,17 @@ class DesktopWindow(QMainWindow):
 
     def _build_overview(self) -> QWidget:
         page, layout = self._page(
-            "Arbeitsbereich",
-            "Deine Produkttexte im Blick",
-            "CSV laden, Spalten zuordnen, Texte verbessern und das Ergebnis exportieren.",
+            "Workspace",
+            "Your product descriptions at a glance",
+            "Import a CSV, map its columns, improve descriptions, and export the results.",
         )
         stats = QHBoxLayout()
         self.stat_labels: dict[str, QLabel] = {}
         for key, title in (
-            ("total", "Produkte"),
-            ("pending", "Offen"),
-            ("done", "Fertig"),
-            ("error", "Fehler"),
+            ("total", "Products"),
+            ("pending", "Pending"),
+            ("done", "Done"),
+            ("error", "Errors"),
         ):
             card, card_layout = _card()
             card_layout.addWidget(_label(title, "muted"))
@@ -224,15 +333,15 @@ class DesktopWindow(QMainWindow):
         layout.addLayout(stats)
 
         progress_card, progress_layout = _card()
-        progress_layout.addWidget(_label("Fortschritt", "eyebrow"))
-        self.stage_label = _label("Bereit", "muted")
+        progress_layout.addWidget(_label("Progress", "eyebrow"))
+        self.stage_label = _label("Ready", "muted")
         progress_layout.addWidget(self.stage_label)
         self.progress_bar = QProgressBar()
         self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(0)
         progress_layout.addWidget(self.progress_bar)
         actions = QHBoxLayout()
-        for text, page_index in (("CSV öffnen", 1), ("Optimierer wählen", 2), ("Export", 3)):
+        for text, page_index in (("Open CSV", 1), ("Choose optimizer", 2), ("Export", 3)):
             button = QPushButton(text)
             if page_index == 1:
                 button.setObjectName("primary")
@@ -243,8 +352,8 @@ class DesktopWindow(QMainWindow):
         layout.addWidget(progress_card)
 
         results_card, results_layout = _card()
-        results_layout.addWidget(_label("Produkte · erste 100 Einträge", "eyebrow"))
-        self.results_table = _table(["ID", "Status", "Original", "Optimiert"])
+        results_layout.addWidget(_label("Products · first 100 entries", "eyebrow"))
+        self.results_table = _table(["ID", "Status", "Original", "Optimized"])
         self.results_table.setColumnWidth(0, 125)
         self.results_table.setColumnWidth(1, 95)
         self.results_table.setColumnWidth(2, 310)
@@ -252,7 +361,7 @@ class DesktopWindow(QMainWindow):
         results_layout.addWidget(self.results_table)
         self.detail = QPlainTextEdit()
         self.detail.setReadOnly(True)
-        self.detail.setPlaceholderText("Produkt auswählen, um den vollständigen Text zu sehen.")
+        self.detail.setPlaceholderText("Select a product to view the full text.")
         self.detail.setMaximumHeight(130)
         results_layout.addWidget(self.detail)
         layout.addWidget(results_card, 1)
@@ -260,30 +369,28 @@ class DesktopWindow(QMainWindow):
 
     def _build_import(self) -> QWidget:
         page, layout = self._page(
-            "Schritt 1",
-            "CSV importieren",
-            "Datei auswählen und festlegen, welche Spalten ID, Beschreibung und Kontext enthalten.",
+            "Step 1",
+            "Import CSV",
+            "Choose a file and map its product ID, description, and context columns.",
         )
         file_card, file_layout = _card()
-        file_layout.addWidget(_label("Quelldatei", "eyebrow"))
+        file_layout.addWidget(_label("Source file", "eyebrow"))
         file_row = QHBoxLayout()
         self.file_path = QLineEdit()
-        self.file_path.setPlaceholderText("Noch keine CSV-Datei ausgewählt")
+        self.file_path.setPlaceholderText("No CSV file selected")
         self.file_path.setReadOnly(True)
         file_row.addWidget(self.file_path, 1)
-        browse = QPushButton("Datei wählen")
+        browse = QPushButton("Choose file")
         browse.clicked.connect(self._choose_source)
         file_row.addWidget(browse)
         file_layout.addLayout(file_row)
-        self.format_label = _label("UTF-8 und CP1252 · Trennzeichen werden erkannt", "muted")
+        self.format_label = _label("UTF-8 and CP1252 · delimiter detected automatically", "muted")
         file_layout.addWidget(self.format_label)
         layout.addWidget(file_card)
 
         map_card, map_layout = _card()
-        map_layout.addWidget(_label("Spaltenzuordnung", "eyebrow"))
-        map_layout.addWidget(
-            _label("Mindestens eine Spalte muss als Beschreibung markiert sein.", "muted")
-        )
+        map_layout.addWidget(_label("Column mapping", "eyebrow"))
+        map_layout.addWidget(_label("Mark at least one column as Description.", "muted"))
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -296,12 +403,12 @@ class DesktopWindow(QMainWindow):
         layout.addWidget(map_card)
 
         sample_card, sample_layout = _card()
-        sample_layout.addWidget(_label("Dateivorschau", "eyebrow"))
+        sample_layout.addWidget(_label("File preview", "eyebrow"))
         self.sample_table = _table([])
         sample_layout.addWidget(self.sample_table)
         layout.addWidget(sample_card, 1)
 
-        self.import_button = QPushButton("Produkte importieren")
+        self.import_button = QPushButton("Import products")
         self.import_button.setObjectName("primary")
         self.import_button.clicked.connect(self._start_import)
         layout.addWidget(self.import_button, alignment=Qt.AlignmentFlag.AlignRight)
@@ -309,59 +416,56 @@ class DesktopWindow(QMainWindow):
 
     def _build_optimizer(self) -> QWidget:
         page, layout = self._page(
-            "Schritt 2",
-            "Beschreibungen optimieren",
-            "Einen Anbieter wählen und die Verarbeitung starten. "
-            "Der Fortschritt wird lokal gespeichert.",
+            "Step 2",
+            "Optimize descriptions",
+            "Choose an AI provider and start processing. Progress is saved locally.",
         )
         config_card, config_layout = _card()
-        config_layout.addWidget(_label("Anbieter & Einstellungen", "eyebrow"))
+        config_layout.addWidget(_label("Provider & settings", "eyebrow"))
         form = QFormLayout()
         form.setSpacing(14)
         self.backend_box = QComboBox()
         for text, value in (
-            ("Lokaler LLM-Server", "local_llm"),
+            ("Local AI server", "local_llm"),
             ("Google Gemini", "gemini"),
             ("ZhipuAI", "zhipuai"),
-            ("Demo · Text in Großbuchstaben", "dummy"),
+            ("Demo · uppercase text", "dummy"),
         ):
             self.backend_box.addItem(text, value)
         self.backend_box.currentIndexChanged.connect(self._backend_changed)
-        form.addRow("Optimierer", self.backend_box)
+        form.addRow("Optimizer", self.backend_box)
         self.key_input = QLineEdit()
         self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.key_input.setPlaceholderText("API-Schlüssel")
-        form.addRow("API-Schlüssel", self.key_input)
+        self.key_input.setPlaceholderText("API key")
+        form.addRow("API key", self.key_input)
         self.model_input = QLineEdit()
-        form.addRow("Modell", self.model_input)
+        form.addRow("Model", self.model_input)
         self.address_input = QLineEdit()
         self.address_input.setPlaceholderText("http://127.0.0.1:11434/v1")
-        form.addRow("Server-Adresse", self.address_input)
+        form.addRow("Server address", self.address_input)
         self.style_input = QPlainTextEdit()
         self.style_input.setMaximumHeight(90)
-        self.style_input.setPlaceholderText("Optional: Ton, Zielgruppe oder gewünschter Stil")
-        form.addRow("Stilhinweise", self.style_input)
+        self.style_input.setPlaceholderText("Optional: tone, audience, or preferred style")
+        form.addRow("Style instructions", self.style_input)
         config_layout.addLayout(form)
-        config_layout.addWidget(
-            _label("Einstellungen werden in ~/.pdo/config.toml gespeichert.", "muted")
-        )
+        config_layout.addWidget(_label("Settings are saved in ~/.pdo/config.toml.", "muted"))
         self.data_flow_label = _label("", "muted")
         config_layout.addWidget(self.data_flow_label)
         layout.addWidget(config_card)
 
         run_card, run_layout = _card()
-        run_layout.addWidget(_label("Verarbeitung", "eyebrow"))
-        self.run_status = _label("Bereit", "muted")
+        run_layout.addWidget(_label("Processing", "eyebrow"))
+        self.run_status = _label("Ready", "muted")
         run_layout.addWidget(self.run_status)
         buttons = QHBoxLayout()
-        self.optimize_button = QPushButton("Optimierung starten")
+        self.optimize_button = QPushButton("Start optimization")
         self.optimize_button.setObjectName("primary")
         self.optimize_button.clicked.connect(self._start_optimization)
         buttons.addWidget(self.optimize_button)
-        self.pause_button = QPushButton("Pausieren")
+        self.pause_button = QPushButton("Pause")
         self.pause_button.clicked.connect(self.session.pause)
         buttons.addWidget(self.pause_button)
-        self.resume_button = QPushButton("Fortsetzen")
+        self.resume_button = QPushButton("Resume")
         self.resume_button.clicked.connect(self.session.resume)
         buttons.addWidget(self.resume_button)
         buttons.addStretch(1)
@@ -376,23 +480,23 @@ class DesktopWindow(QMainWindow):
 
     def _build_export(self) -> QWidget:
         page, layout = self._page(
-            "Schritt 3",
-            "Ergebnis exportieren",
-            "Fertige Beschreibungen mit allen ursprünglichen CSV-Spalten als neue Datei speichern.",
+            "Step 3",
+            "Export results",
+            "Save completed descriptions with all original CSV columns in a new file.",
         )
         card, card_layout = _card()
-        card_layout.addWidget(_label("Zieldatei", "eyebrow"))
+        card_layout.addWidget(_label("Output file", "eyebrow"))
         row = QHBoxLayout()
         self.output_path = QLineEdit()
-        self.output_path.setPlaceholderText("Zieldatei auswählen")
+        self.output_path.setPlaceholderText("Choose an output file")
         row.addWidget(self.output_path, 1)
-        choose = QPushButton("Speicherort wählen")
+        choose = QPushButton("Choose location")
         choose.clicked.connect(self._choose_output)
         row.addWidget(choose)
         card_layout.addLayout(row)
-        self.include_errors = QCheckBox("Fehlerhafte Zeilen ebenfalls exportieren")
+        self.include_errors = QCheckBox("Include failed rows")
         card_layout.addWidget(self.include_errors)
-        self.export_button = QPushButton("CSV exportieren")
+        self.export_button = QPushButton("Export CSV")
         self.export_button.setObjectName("primary")
         self.export_button.clicked.connect(self._start_export)
         card_layout.addWidget(self.export_button, alignment=Qt.AlignmentFlag.AlignRight)
@@ -407,7 +511,7 @@ class DesktopWindow(QMainWindow):
 
     def _choose_source(self) -> None:
         name, _ = QFileDialog.getOpenFileName(
-            self, "CSV-Datei öffnen", "", "CSV-Dateien (*.csv);;Alle Dateien (*)"
+            self, "Open CSV file", "", "CSV files (*.csv);;All files (*)"
         )
         if not name:
             return
@@ -418,8 +522,8 @@ class DesktopWindow(QMainWindow):
             return
         self.file_path.setText(name)
         self.format_label.setText(
-            f"{self.preview.encoding.upper()} · Trennzeichen: {self.preview.delimiter!r} · "
-            f"{len(self.preview.headers)} Spalten"
+            f"{self.preview.encoding.upper()} · delimiter: {self.preview.delimiter!r} · "
+            f"{len(self.preview.headers)} columns"
         )
         self._populate_mapping(self.preview)
         self._populate_sample(self.preview)
@@ -440,10 +544,10 @@ class DesktopWindow(QMainWindow):
             row_layout.addWidget(name, 1)
             combo = QComboBox()
             for label, role in (
-                ("Ignorieren", "ignore"),
-                ("Produkt-ID", "product_id"),
-                ("Beschreibung", "description"),
-                ("Kontext", "context"),
+                ("Ignore", "ignore"),
+                ("Product ID", "product_id"),
+                ("Description", "description"),
+                ("Context", "context"),
             ):
                 combo.addItem(label, role)
             combo.setCurrentIndex(combo.findData(suggest_role(header)))
@@ -466,13 +570,13 @@ class DesktopWindow(QMainWindow):
 
     def _start_import(self) -> None:
         if self.preview is None:
-            self._error("Bitte zuerst eine CSV-Datei auswählen.")
+            self._error("Choose a CSV file first.")
             return
         if self.session.status()["progress"]["total"]:
             answer = QMessageBox.question(
                 self,
-                "Vorhandene Daten ersetzen",
-                "Der neue Import ersetzt die bisherige Produktliste. Fortfahren?",
+                "Replace existing products",
+                "This import will replace the current product list. Continue?",
             )
             if answer != QMessageBox.StandardButton.Yes:
                 return
@@ -509,18 +613,15 @@ class DesktopWindow(QMainWindow):
         self.style_input.setPlainText(options.get("style_instructions", ""))
         if remote:
             self.data_flow_label.setText(
-                "Beschreibung und ausgewählte Kontextfelder werden zur Verarbeitung "
-                "an den gewählten Cloud-Anbieter übertragen."
+                "Descriptions and selected context fields are sent to the chosen "
+                "cloud provider for processing."
             )
         elif local:
             self.data_flow_label.setText(
-                "Beschreibung und Kontextfelder werden an die konfigurierte "
-                "Server-Adresse gesendet."
+                "Descriptions and context fields are sent to the configured server address."
             )
         else:
-            self.data_flow_label.setText(
-                "Der Demo-Modus verarbeitet die Beschreibung direkt auf diesem Computer."
-            )
+            self.data_flow_label.setText("Demo mode processes descriptions on this computer.")
 
     def _start_optimization(self) -> None:
         backend = self.backend_box.currentData()
@@ -541,7 +642,7 @@ class DesktopWindow(QMainWindow):
 
     def _choose_output(self) -> None:
         name, _ = QFileDialog.getSaveFileName(
-            self, "CSV exportieren", "optimized-products.csv", "CSV-Dateien (*.csv)"
+            self, "Export CSV", "optimized-products.csv", "CSV files (*.csv)"
         )
         if name:
             self.output_path.setText(name)
@@ -549,7 +650,7 @@ class DesktopWindow(QMainWindow):
     def _start_export(self) -> None:
         name = self.output_path.text().strip()
         if not name:
-            self._error("Bitte einen Speicherort für die CSV-Datei auswählen.")
+            self._error("Choose where to save the CSV file.")
             return
         try:
             self.session.export_file(Path(name), include_errors=self.include_errors.isChecked())
@@ -560,7 +661,20 @@ class DesktopWindow(QMainWindow):
         self._poll()
 
     def _poll(self) -> None:
-        status = self.session.status()
+        if self._hidden_to_tray and not self._tray_available():
+            self._show_from_tray()
+        try:
+            status = self.session.status()
+        except (PdoError, RuntimeError) as exc:
+            self._daemon_unreachable = True
+            self.daemon_label.setText("Daemon unavailable")
+            self.run_status.setText("Daemon unavailable")
+            self.statusBar().showMessage(f"Daemon unavailable: {exc}")
+            return
+        self.daemon_label.setText(f"Daemon running · v{__version__}")
+        if self._daemon_unreachable:
+            self._daemon_unreachable = False
+            self.statusBar().clearMessage()
         progress = status["progress"]
         busy = status["busy"]
         for key, label in self.stat_labels.items():
@@ -569,15 +683,15 @@ class DesktopWindow(QMainWindow):
         completed = progress["done"] + progress["error"]
         self.progress_bar.setValue(round(100 * completed / total) if total else 0)
         stage_names = {
-            "idle": "Bereit",
-            "importing": "CSV wird importiert",
-            "optimizing": "Optimierung läuft",
-            "exporting": "CSV wird exportiert",
+            "idle": "Ready",
+            "importing": "Importing CSV",
+            "optimizing": "Optimizing",
+            "exporting": "Exporting CSV",
         }
         state_text = stage_names.get(status["stage"], status["stage"])
         if status["paused"]:
-            state_text = "Pausiert · laufendes Produkt wird noch abgeschlossen"
-        self.stage_label.setText(f"{state_text} · {completed} von {total} verarbeitet")
+            state_text = "Paused · finishing current product"
+        self.stage_label.setText(f"{state_text} · {completed} of {total} processed")
         self.run_status.setText(state_text)
         self.import_button.setEnabled(self.preview is not None and not busy)
         self.optimize_button.setEnabled(progress["pending"] > 0 and not busy)
@@ -601,14 +715,14 @@ class DesktopWindow(QMainWindow):
                 self._error(result["error"])
             elif result.get("errors"):
                 errors = result["errors"]
+                error_count = result.get("error_count", len(errors))
                 preview = "\n".join(str(error) for error in errors[:3])
-                suffix = f"\n… und {len(errors) - 3} weitere" if len(errors) > 3 else ""
+                suffix = f"\n… and {error_count - 3} more" if error_count > 3 else ""
                 self._error(
-                    f"Import abgeschlossen, aber {len(errors)} Zeilen wurden übersprungen.\n"
-                    f"{preview}{suffix}"
+                    f"Import finished, but {error_count} rows were skipped.\n{preview}{suffix}"
                 )
             elif result:
-                self.statusBar().showMessage("Vorgang abgeschlossen.", 7000)
+                self.statusBar().showMessage("Operation completed.", 7000)
             self._refresh_products()
         self._was_busy = busy
 
@@ -633,37 +747,77 @@ class DesktopWindow(QMainWindow):
         row = self.results_table.currentRow()
         if not 0 <= row < len(self._shown_products):
             return
-        product = self._shown_products[row]
+        try:
+            product = self.session.product(int(self._shown_products[row]["id"]))
+        except Exception as exc:
+            self._error(str(exc))
+            return
+        original_suffix = "\n[… truncated]" if product["original_truncated"] else ""
+        optimized_suffix = "\n[… truncated]" if product["optimized_truncated"] else ""
+        error_suffix = "\n[… truncated]" if product["error_truncated"] else ""
         self.detail.setPlainText(
-            f"Original\n{product['original_description']}\n\n"
-            f"Optimiert\n{product['optimized_description'] or '—'}"
-            + (f"\n\nFehler\n{product['error_message']}" if product["error_message"] else "")
+            f"Original\n{product['original_description']}{original_suffix}\n\n"
+            f"Optimized\n{product['optimized_description'] or '—'}{optimized_suffix}"
+            + (
+                f"\n\nError\n{product['error_message']}{error_suffix}"
+                if product["error_message"]
+                else ""
+            )
         )
 
     def _error(self, message: str) -> None:
         QMessageBox.warning(self, "PDO", message)
 
     def closeEvent(self, event: Any) -> None:  # noqa: N802 - Qt override
-        """Stop background work before the window closes."""
-        self.timer.stop()
-        try:
-            self.session.close()
-        except RuntimeError as exc:
-            self._error(str(exc))
-            self.timer.start()
+        """Hide in the tray or close only this GUI client."""
+        if not self._quitting and self._tray_available():
+            self._hidden_to_tray = True
+            self.hide()
             event.ignore()
-        else:
-            event.accept()
+            if not self._tray_notice_shown:
+                message = "PDO is in the system tray. The daemon continues running."
+                if isinstance(self._tray, QSystemTrayIcon):
+                    self._tray.showMessage(
+                        "PDO is running",
+                        message,
+                        QSystemTrayIcon.MessageIcon.Information,
+                        4000,
+                    )
+                else:
+                    self._tray.notify(message)
+                self._tray_notice_shown = True
+            return
+        self.timer.stop()
+        self.session.close()
+        if self._tray is not None:
+            if isinstance(self._tray, QSystemTrayIcon):
+                self._tray.hide()
+            else:
+                self._tray.stop()
+        event.accept()
+        if not self._tray_available():
+            app = QApplication.instance()
+            if app is not None:
+                app.quit()
 
 
 def main() -> int:
     """Launch the desktop application or run the packaged smoke check."""
+    if "--daemon-process" in sys.argv:
+        from pdo.daemon.entry import main as daemon_main
+
+        return daemon_main(sys.argv[1:])
     if "--smoke-test" in sys.argv:
         from google import genai
         from openai import OpenAI
         from zhipuai import ZhipuAI
 
         from pdo.core.registry import list_optimizers
+
+        if sys.platform == "linux":
+            from pdo.desktop.linux_tray import StatusNotifierItem
+
+            assert StatusNotifierItem
 
         assert list_optimizers()
         assert genai.Client(api_key="package-smoke-test").models
@@ -672,12 +826,24 @@ def main() -> int:
         app = QApplication(["pdo-smoke-test"])
         with tempfile.TemporaryDirectory(prefix="pdo-smoke-") as temp_dir:
             base = Path(temp_dir)
-            window = DesktopWindow(
-                DesktopSession(
-                    PdoConfig(data_dir=base / "data", config_file_path=base / "config.toml")
+            session = DesktopSession(
+                PdoConfig(
+                    data_dir=base / "data",
+                    log_dir=base / "logs",
+                    socket_path=base / "pdo.sock",
+                    config_file_path=base / "config.toml",
                 )
             )
-            window.close()
+            window = DesktopWindow(session)
+            from pdo.daemon.pid import read_pid, wait_for_exit
+
+            daemon_pid = read_pid(session.config.data_dir / "daemon.pid")
+            assert daemon_pid is not None
+            window.quit()
+            from pdo.daemon.endpoint import endpoint_file
+
+            assert wait_for_exit(daemon_pid, 5.0)
+            assert not endpoint_file(session.config).exists()
         app.quit()
         return 0
     app = QApplication(sys.argv)
@@ -687,8 +853,9 @@ def main() -> int:
     try:
         window = DesktopWindow()
     except Exception as exc:
-        QMessageBox.critical(None, "PDO konnte nicht starten", str(exc))
+        QMessageBox.critical(None, "PDO could not start", str(exc))
         return 1
+    app.setQuitOnLastWindowClosed(not window._tray_available())
     window.show()
     return app.exec()
 

@@ -8,6 +8,7 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
+        dbus \
         desktop-file-utils \
         file \
         libdbus-1-3 \
@@ -33,6 +34,13 @@ RUN curl --fail --location --retry 3 \
     && mv /opt/squashfs-root /opt/appimagetool \
     && ln -s /opt/appimagetool/AppRun /usr/local/bin/appimagetool \
     && rm /tmp/appimagetool.AppImage
+
+ARG BUILD_UID=1000
+ARG BUILD_GID=1000
+RUN if ! getent group "$BUILD_GID" >/dev/null; then groupadd --gid "$BUILD_GID" pdo-build; fi \
+    && if ! getent passwd "$BUILD_UID" >/dev/null; then \
+        useradd --uid "$BUILD_UID" --gid "$BUILD_GID" --no-create-home pdo-build; \
+    fi
 
 WORKDIR /workspace
 ENV APPIMAGETOOL=/usr/local/bin/appimagetool

@@ -1,29 +1,28 @@
-"""Daemon socket server — accepts CLI commands over a Unix domain socket.
-
-The server binds to the configured socket path, dispatches incoming
-:class:`Request` messages to the :class:`Worker`, and sends back
-:class:`Response` messages.
-"""
+"""Local daemon server shared by CLI and desktop clients."""
 
 from __future__ import annotations
 
 import logging
 import os
+import secrets
 import selectors
 import signal
 import socket
 import sys
+import threading
+import time
 from collections.abc import Callable
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
 from pdo import __version__
-from pdo.config import PdoConfig, load_config
+from pdo.config import PdoConfig, load_config, save_config_values
 from pdo.core.db import Database
 from pdo.core.instance_lock import InstanceLock
-from pdo.daemon.pid import is_daemon_running, remove_pid, write_pid
+from pdo.daemon.endpoint import DaemonEndpoint, remove_endpoint, write_endpoint
+from pdo.daemon.pid import remove_pid, write_pid
 from pdo.daemon.worker import Worker
-from pdo.exceptions import InstanceAlreadyRunningError
 from pdo.protocol.messages import (
     Request,
     Response,
@@ -35,11 +34,10 @@ log = logging.getLogger(__name__)
 
 
 class DaemonServer:
-    """Unix domain socket server for the PDO daemon."""
+    """Loopback TCP server for the PDO daemon."""
 
     def __init__(self, config: PdoConfig | None = None) -> None:
         self._config = config or load_config()
-        self._socket_path = self._config.socket_path
         self._pid_path = self._config.data_dir / "daemon.pid"
         self._db: Database | None = None
         self._worker: Worker | None = None
@@ -48,38 +46,26 @@ class DaemonServer:
         self._sel: selectors.DefaultSelector | None = None
         self._instance_lock = InstanceLock(self._config.data_dir / "pdo.lock")
         self._pid_written = False
-        self._socket_bound = False
+        self._port_published = False
+        self._port: int | None = None
+        self._auth_token: str | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
-    def start(
-        self,
-        *,
-        foreground: bool = False,
-        on_starting: Callable[[], None] | None = None,
-    ) -> None:
+    def start(self, *, on_ready: Callable[[], None] | None = None) -> None:
         """Start the daemon.
 
         Args:
-            foreground: If *True*, run in the current process (for debugging).
-                Otherwise fork into the background.
-            on_starting: Optional callback invoked after exclusive access has
-                been acquired and before the daemon enters the foreground or
-                forks into the background.
+            on_ready: Optional callback invoked when the endpoint is published.
         """
-        if is_daemon_running(self._pid_path):
-            raise InstanceAlreadyRunningError("Daemon is already running.")
-
         self._instance_lock.acquire()
-        if on_starting is not None:
-            on_starting()
-
-        if not foreground:
-            _daemonize()
-
         try:
             self._setup()
-            log.info("Daemon started (pid=%d, socket=%s)", os.getpid(), self._socket_path)
+            if not self._running:
+                return
+            if on_ready is not None:
+                on_ready()
+            log.info("Daemon started (pid=%d, port=%d)", os.getpid(), self._port)
             self._serve()
         except KeyboardInterrupt:
             log.info("Received keyboard interrupt")
@@ -100,10 +86,9 @@ class DaemonServer:
         if self._server_sock:
             self._server_sock.close()
 
-        # Remove socket file
-        if self._socket_bound:
-            self._socket_path.unlink(missing_ok=True)
-            self._socket_bound = False
+        if self._port_published:
+            remove_endpoint(self._config)
+            self._port_published = False
         if self._pid_written:
             remove_pid(self._pid_path)
             self._pid_written = False
@@ -119,23 +104,24 @@ class DaemonServer:
     # ── Internal setup ───────────────────────────────────────────────
 
     def _setup(self) -> None:
-        """Initialise database, worker, socket, and signal handlers."""
+        """Initialise database, worker, endpoint, and signal handlers."""
         # Ensure directories exist
         self._config.data_dir.mkdir(parents=True, exist_ok=True)
         self._config.log_dir.mkdir(parents=True, exist_ok=True)
 
         # Configure logging
         log_file = self._config.log_dir / "daemon.log"
+        handlers: list[logging.Handler] = [
+            RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+        ]
+        if sys.stdout is not None:
+            handlers.append(logging.StreamHandler(sys.stdout))
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+            handlers=handlers,
             force=True,
         )
-
-        # Write PID
-        write_pid(self._pid_path)
-        self._pid_written = True
 
         # Database
         db_path = self._config.data_dir / "pdo.db"
@@ -146,13 +132,15 @@ class DaemonServer:
         # Worker
         self._worker = Worker(self._db, self._config)
 
-        # Socket
-        self._socket_path.unlink(missing_ok=True)
-        self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        # A loopback TCP endpoint works on Linux and Windows. Binding port 0
+        # lets the OS select a free port, which is published after listen().
+        remove_endpoint(self._config)
+        self._server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        self._server_sock.bind(str(self._socket_path))
-        self._socket_bound = True
+        self._server_sock.bind(("127.0.0.1", 0))
         self._server_sock.listen(5)
+        self._port = int(self._server_sock.getsockname()[1])
+        self._auth_token = secrets.token_urlsafe(32)
         self._server_sock.setblocking(False)
 
         # Selector for non-blocking I/O
@@ -160,10 +148,18 @@ class DaemonServer:
         self._sel.register(self._server_sock, selectors.EVENT_READ)
 
         # Signal handlers
-        signal.signal(signal.SIGTERM, self._handle_signal)
-        signal.signal(signal.SIGINT, self._handle_signal)
-
         self._running = True
+        if threading.current_thread() is threading.main_thread():
+            signal.signal(signal.SIGTERM, self._handle_signal)
+            signal.signal(signal.SIGINT, self._handle_signal)
+
+        write_pid(self._pid_path)
+        self._pid_written = True
+        write_endpoint(
+            self._config,
+            DaemonEndpoint(port=self._port, token=self._auth_token),
+        )
+        self._port_published = True
 
     def _serve(self) -> None:
         """Main accept loop."""
@@ -179,8 +175,7 @@ class DaemonServer:
         assert self._server_sock is not None
         conn, _ = self._server_sock.accept()
         try:
-            conn.settimeout(5.0)
-            raw = receive_message(conn)
+            raw = receive_message(conn, deadline=time.monotonic() + 1.0)
             request = Request(**raw)
             response = self._dispatch(request)
             send_message(conn, response)
@@ -199,11 +194,23 @@ class DaemonServer:
         """Route a request to the appropriate handler."""
         assert self._worker is not None
 
+        if self._auth_token is not None and not secrets.compare_digest(
+            request.auth_token, self._auth_token
+        ):
+            return Response(success=False, error="Daemon authentication failed.")
+
+        # These authenticated control actions deliberately remain stable across
+        # versions so a newly installed client can replace an older daemon.
+        if request.action == "ping":
+            return self._handle_ping(request.payload)
+        if request.action == "stop":
+            return self._handle_stop(request.payload)
+
         if request.client_version != __version__:
             return Response(
                 success=False,
                 error=(
-                    f"Version mismatch: CLI client is v{request.client_version}, "
+                    f"Version mismatch: client is v{request.client_version}, "
                     f"but daemon is v{__version__}."
                 ),
             )
@@ -213,11 +220,11 @@ class DaemonServer:
             "optimize": self._handle_optimize,
             "export": self._handle_export,
             "status": self._handle_status,
+            "products": self._handle_products,
+            "product": self._handle_product,
             "pause": self._handle_pause,
             "resume": self._handle_resume,
             "reset": self._handle_reset,
-            "stop": self._handle_stop,
-            "ping": self._handle_ping,
         }
 
         handler = handlers.get(request.action)
@@ -241,7 +248,11 @@ class DaemonServer:
         delimiter = payload.get("delimiter", ";")
         limit = payload.get("limit")
         started = self._worker.start_import(
-            Path(csv_path), column_mappings, delimiter=delimiter, limit=limit
+            Path(csv_path),
+            column_mappings,
+            delimiter=delimiter,
+            limit=limit,
+            replace_existing=bool(payload.get("replace_existing", False)),
         )
         if not started:
             return Response(success=False, error="Worker is busy")
@@ -249,7 +260,26 @@ class DaemonServer:
 
     def _handle_optimize(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
+        if self._worker.is_busy:
+            return Response(success=False, error="Worker is busy")
         optimizer_name = payload.get("optimizer")
+        settings = payload.get("settings", {})
+        if not isinstance(settings, dict):
+            return Response(success=False, error="Invalid 'settings' in payload")
+        if optimizer_name or settings:
+            values = {str(key): str(value) for key, value in settings.items()}
+            if optimizer_name:
+                values["optimizer"] = str(optimizer_name)
+            save_config_values(self._config.config_file_path, values)
+            self._config = load_config(
+                config_file=self._config.config_file_path,
+                overrides={
+                    "data_dir": str(self._config.data_dir),
+                    "log_dir": str(self._config.log_dir),
+                    "socket_path": str(self._config.socket_path),
+                },
+            )
+            self._worker.update_config(self._config)
         started = self._worker.start_optimization(optimizer_name=optimizer_name)
         if not started:
             return Response(success=False, error="Worker is busy")
@@ -269,6 +299,25 @@ class DaemonServer:
     def _handle_status(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
         return Response(success=True, data=self._worker.get_status())
+
+    def _handle_products(self, payload: dict[str, Any]) -> Response:
+        assert self._db is not None
+        try:
+            limit = max(0, min(int(payload.get("limit", 100)), 100))
+        except (TypeError, ValueError):
+            return Response(success=False, error="Invalid product limit")
+        return Response(success=True, data={"products": self._db.get_product_preview(limit)})
+
+    def _handle_product(self, payload: dict[str, Any]) -> Response:
+        assert self._db is not None
+        try:
+            product_id = int(payload["id"])
+        except (KeyError, TypeError, ValueError):
+            return Response(success=False, error="Invalid product ID")
+        product = self._db.get_product_detail(product_id)
+        if product is None:
+            return Response(success=False, error="Product not found")
+        return Response(success=True, data={"product": product})
 
     def _handle_pause(self, payload: dict[str, Any]) -> Response:
         assert self._worker is not None
@@ -306,19 +355,3 @@ class DaemonServer:
         """Handle SIGTERM / SIGINT gracefully."""
         log.info("Received signal %d", signum)
         self._running = False
-
-
-# ── Daemonize helper ─────────────────────────────────────────────────
-
-
-def _daemonize() -> None:
-    """Double-fork to detach from the controlling terminal."""
-    if os.fork() > 0:
-        sys.exit(0)
-    os.setsid()
-    if os.fork() > 0:
-        sys.exit(0)
-    # Redirect stdio to /dev/null
-    sys.stdin = open(os.devnull)  # noqa: SIM115
-    sys.stdout = open(os.devnull, "w")  # noqa: SIM115
-    sys.stderr = open(os.devnull, "w")  # noqa: SIM115

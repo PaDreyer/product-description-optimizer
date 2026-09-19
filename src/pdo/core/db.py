@@ -10,8 +10,26 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+import threading
+from collections.abc import Callable
+from functools import wraps
 from pathlib import Path
 from typing import Any
+
+_PREVIEW_TEXT_LIMIT = 250
+_DETAIL_TEXT_LIMIT = 50_000
+_DETAIL_METADATA_LIMIT = 5_000
+
+
+def _serialized(method: Callable[..., Any]) -> Callable[..., Any]:
+    """Serialize access to the shared SQLite connection."""
+
+    @wraps(method)
+    def wrapper(self: Database, *args: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 class Database:
@@ -31,6 +49,7 @@ class Database:
         (useful in tests).
         """
         self._db_path = str(db_path)
+        self._lock = threading.RLock()
         self._conn: sqlite3.Connection = sqlite3.connect(
             self._db_path,
             check_same_thread=False,
@@ -54,6 +73,7 @@ class Database:
 
     # ── Schema ───────────────────────────────────────────────────────
 
+    @_serialized
     def initialize(self) -> None:
         """Create tables if they do not already exist (idempotent)."""
         with self._conn:
@@ -61,6 +81,7 @@ class Database:
 
     # ── Products ─────────────────────────────────────────────────────
 
+    @_serialized
     def insert_products(self, products: list[dict[str, Any]]) -> int:
         """Bulk-insert product rows and return the number inserted.
 
@@ -94,6 +115,7 @@ class Database:
             self._conn.executemany(sql, rows)
         return len(rows)
 
+    @_serialized
     def get_next_pending(self) -> dict[str, Any] | None:
         """Return the next product with status ``pending``, or *None*."""
         row = self._conn.execute(
@@ -101,6 +123,7 @@ class Database:
         ).fetchone()
         return _row_to_dict(row) if row else None
 
+    @_serialized
     def update_product_status(
         self,
         product_id: int,
@@ -123,6 +146,7 @@ class Database:
                 (status, optimized_description, error_message, product_id),
             )
 
+    @_serialized
     def get_progress(self) -> dict[str, int]:
         """Return counts of products by status.
 
@@ -145,6 +169,7 @@ class Database:
             counts["total"] += row["cnt"]
         return counts
 
+    @_serialized
     def get_all_products(self, status: str | None = None) -> list[dict[str, Any]]:
         """Fetch all products, optionally filtered by *status*."""
         if status:
@@ -155,6 +180,7 @@ class Database:
             rows = self._conn.execute("SELECT * FROM products ORDER BY id").fetchall()
         return [_row_to_dict(r) for r in rows]
 
+    @_serialized
     def get_product_preview(self, limit: int = 100) -> list[dict[str, Any]]:
         """Return a bounded sample of products for desktop display.
 
@@ -165,12 +191,55 @@ class Database:
             Product records ordered by import order.
         """
         rows = self._conn.execute(
-            "SELECT id, product_id_value, original_description, optimized_description, "
-            "status, error_message FROM products ORDER BY id LIMIT ?",
-            (max(0, limit),),
+            "SELECT id, substr(product_id_value, 1, ?) AS product_id_value, "
+            "substr(original_description, 1, ?) AS original_description, "
+            "substr(optimized_description, 1, ?) AS optimized_description, "
+            "status, substr(error_message, 1, ?) AS error_message "
+            "FROM products ORDER BY id LIMIT ?",
+            (
+                _PREVIEW_TEXT_LIMIT,
+                _PREVIEW_TEXT_LIMIT,
+                _PREVIEW_TEXT_LIMIT,
+                _PREVIEW_TEXT_LIMIT,
+                max(0, limit),
+            ),
         ).fetchall()
         return [dict(row) for row in rows]
 
+    @_serialized
+    def get_product_detail(self, product_id: int) -> dict[str, Any] | None:
+        """Return one product with byte-safe bounded text fields.
+
+        Args:
+            product_id: Internal database product ID.
+
+        Returns:
+            Product detail or ``None`` when the ID does not exist. Truncation
+            flags indicate text that exceeded the desktop detail limit.
+        """
+        row = self._conn.execute(
+            "SELECT id, substr(product_id_value, 1, ?) AS product_id_value, "
+            "substr(original_description, 1, ?) AS original_description, "
+            "substr(optimized_description, 1, ?) AS optimized_description, "
+            "status, substr(error_message, 1, ?) AS error_message, "
+            "length(original_description) > ? AS original_truncated, "
+            "length(optimized_description) > ? AS optimized_truncated, "
+            "length(error_message) > ? AS error_truncated "
+            "FROM products WHERE id = ?",
+            (
+                _DETAIL_METADATA_LIMIT,
+                _DETAIL_TEXT_LIMIT,
+                _DETAIL_TEXT_LIMIT,
+                _DETAIL_METADATA_LIMIT,
+                _DETAIL_TEXT_LIMIT,
+                _DETAIL_TEXT_LIMIT,
+                _DETAIL_METADATA_LIMIT,
+                product_id,
+            ),
+        ).fetchone()
+        return dict(row) if row else None
+
+    @_serialized
     def requeue_processing(self) -> int:
         """Return interrupted work to a consistent idle state at startup.
 
@@ -189,6 +258,7 @@ class Database:
             )
         return cursor.rowcount
 
+    @_serialized
     def replace_from(self, source_path: Path | str) -> None:
         """Atomically replace all database contents from another SQLite file.
 
@@ -207,11 +277,13 @@ class Database:
 
     # ── Pipeline state ───────────────────────────────────────────────
 
+    @_serialized
     def get_pipeline_state(self) -> dict[str, Any]:
         """Return the singleton pipeline-state row as a dict."""
         row = self._conn.execute("SELECT * FROM pipeline_state WHERE id = 1").fetchone()
         return dict(row) if row else {}
 
+    @_serialized
     def set_pipeline_state(self, stage: str, **kwargs: Any) -> None:
         """Update the pipeline state.  Extra keyword arguments are set as columns.
 
@@ -234,6 +306,7 @@ class Database:
 
     # ── Column mappings ──────────────────────────────────────────────
 
+    @_serialized
     def set_column_mappings(self, mappings: list[dict[str, str]]) -> None:
         """Replace all column mappings with the given list.
 
@@ -253,6 +326,7 @@ class Database:
                 ],
             )
 
+    @_serialized
     def get_column_mappings(self) -> list[dict[str, str]]:
         """Return all column mappings as a list of dicts."""
         rows = self._conn.execute(
@@ -262,6 +336,7 @@ class Database:
 
     # ── Maintenance ──────────────────────────────────────────────────
 
+    @_serialized
     def reset(self, keep: bool = False) -> None:
         """Drop all data and reinitialize the schema.
 
@@ -292,6 +367,7 @@ class Database:
         if not keep:
             self.initialize()
 
+    @_serialized
     def close(self) -> None:
         """Close the database connection."""
         self._conn.close()

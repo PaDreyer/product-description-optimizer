@@ -22,11 +22,15 @@ On Windows, run `.\scripts\setup-dev.ps1`, then activate
 
 Provider settings, including API keys entered in the desktop app, are saved in `~/.pdo/config.toml`. On Linux the file is written with owner-only permissions. You can also set `GEMINI_API_KEY` or `ZHIPUAI_API_KEY` in the environment. The SQLite database lives in `~/.pdo/data/pdo.db` by default.
 
-Cloud AI providers receive the description and context fields selected during column mapping. Choose an OpenAI-compatible local server when that data must remain on your computer. The desktop app and CLI daemon share the same database and enforce exclusive access; stop the daemon with `pdo daemon stop` before starting `pdo-desktop`.
+Cloud AI providers receive the description and context fields selected during column mapping. Choose an OpenAI-compatible local server when that data must remain on your computer.
 
-## CLI on Linux
+The desktop application starts the PDO daemon automatically and uses it as a client. On Linux, the tray icon uses the StatusNotifierItem D-Bus protocol and needs a StatusNotifier host such as KDE Plasma or GNOME with the AppIndicator extension. On Windows it uses the native Qt tray. Closing the window hides the GUI in the tray while the daemon continues the current job. Click the tray icon or choose **Open** from its menu to reopen the window. **Quit** stops the daemon and closes the GUI; other open GUI windows do not restart a deliberately stopped daemon. Without a tray host, closing the window exits the GUI client while the daemon continues; use `pdo daemon stop` to stop it. If the host disappears after the GUI was hidden, PDO restores the window. Opening the GUI again starts or reconnects to the daemon and its saved progress. The CLI can use that daemon at the same time.
 
-The CLI uses a Unix-socket daemon. Start it, then work in a second terminal:
+If the GUI reports a startup error, check `~/.pdo/logs/daemon-startup.log` and `~/.pdo/logs/daemon.log`. With the Python CLI installed, `pdo daemon status` shows whether a daemon process exists and responds; `pdo daemon repair` stops an unresponsive process before cleaning its stale connection files. Starting the GUI again reconnects to the saved database.
+
+## CLI on Linux and Windows
+
+The CLI uses the same local daemon as the desktop application. Install the Python package to use the CLI; the Windows installer contains the GUI only. Start the daemon manually when the desktop application has not already started it, then work in a second terminal:
 
 ```bash
 pdo daemon start

@@ -2,11 +2,36 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
 from pdo.core.db import Database
+
+
+def test_shared_connection_serializes_cross_thread_reads(tmp_path: Path) -> None:
+    """A status read must wait while another operation owns the connection."""
+    with Database(tmp_path / "threaded.db") as database:
+        database.initialize()
+        started = threading.Event()
+        completed = threading.Event()
+
+        def read_progress() -> None:
+            started.set()
+            database.get_progress()
+            completed.set()
+
+        with database._lock:
+            thread = threading.Thread(target=read_progress)
+            thread.start()
+            assert started.wait(timeout=1)
+            time.sleep(0.02)
+            assert not completed.is_set()
+        thread.join(timeout=1)
+        assert completed.is_set()
 
 
 @pytest.fixture()

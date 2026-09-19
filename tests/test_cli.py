@@ -10,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from pdo.cli.main import cli
+from pdo.config import PdoConfig
 from pdo.exceptions import InstanceAlreadyRunningError
 from pdo.protocol.messages import Response
 
@@ -17,6 +18,17 @@ from pdo.protocol.messages import Response
 @pytest.fixture()
 def runner() -> CliRunner:
     return CliRunner()
+
+
+@pytest.fixture()
+def daemon_config(tmp_path: Path) -> PdoConfig:
+    """Keep daemon command tests away from the user's live data directory."""
+    return PdoConfig(
+        data_dir=tmp_path / "data",
+        log_dir=tmp_path / "logs",
+        socket_path=tmp_path / "pdo.sock",
+        config_file_path=tmp_path / "config.toml",
+    )
 
 
 def _mock_response(success: bool = True, data: dict | None = None, error: str | None = None):
@@ -58,22 +70,30 @@ class TestRootCli:
 
 class TestDaemonCommands:
     @patch("pdo.daemon.server.DaemonServer.start")
-    @patch("pdo.cli.daemon_cmd.is_daemon_running", return_value=False)
+    @patch("pdo.daemon.launcher.ensure_daemon_running")
+    def test_daemon_start_uses_shared_detached_launcher(
+        self, mock_ensure, mock_start, runner: CliRunner
+    ) -> None:
+        result = runner.invoke(cli, ["daemon", "start"])
+        assert result.exit_code == 0
+        mock_ensure.assert_called_once()
+        mock_start.assert_not_called()
+
+    @patch("pdo.daemon.server.DaemonServer.start")
     def test_daemon_start_reports_locked_data_directory(
-        self, mock_running, mock_start, runner: CliRunner
+        self, mock_start, runner: CliRunner
     ) -> None:
         mock_start.side_effect = InstanceAlreadyRunningError("data directory is already in use")
-        result = runner.invoke(cli, ["daemon", "start"])
+        result = runner.invoke(cli, ["daemon", "start", "--foreground"])
         assert result.exit_code == 1
         assert "already in use" in result.output
 
     @patch("pdo.daemon.server.DaemonServer.start")
-    @patch("pdo.cli.daemon_cmd.is_daemon_running", return_value=False)
     def test_daemon_start_lock_error_is_single_json_result(
-        self, mock_running, mock_start, runner: CliRunner
+        self, mock_start, runner: CliRunner
     ) -> None:
         mock_start.side_effect = InstanceAlreadyRunningError("locked")
-        result = runner.invoke(cli, ["--json", "daemon", "start"])
+        result = runner.invoke(cli, ["--json", "daemon", "start", "--foreground"])
         assert result.exit_code == 1
         lines = result.output.strip().splitlines()
         assert len(lines) == 1
@@ -93,41 +113,57 @@ class TestDaemonCommands:
         assert result.exit_code == 0
         assert "running" in result.output
 
-    @patch("pdo.cli.client.send_command")
-    def test_daemon_stop(self, mock_cmd, runner: CliRunner) -> None:
-        mock_cmd.return_value = _mock_response(success=True)
+    @patch("pdo.cli.daemon_cmd.stop_shared_daemon", return_value=True)
+    def test_daemon_stop(self, mock_stop, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["daemon", "stop"])
         assert result.exit_code == 0
-        assert "stopping" in result.output.lower()
+        assert "stopped" in result.output.lower()
+        mock_stop.assert_called_once()
 
-    @patch("pdo.daemon.pid.send_signal")
-    @patch("pdo.daemon.pid.remove_pid")
-    def test_daemon_stop_force(self, mock_remove, mock_kill, runner: CliRunner) -> None:
-        mock_kill.return_value = True
-        result = runner.invoke(cli, ["daemon", "stop", "--force"])
+    def test_daemon_stop_force(self, runner: CliRunner, daemon_config: PdoConfig) -> None:
+        with (
+            patch("pdo.cli.daemon_cmd.load_config", return_value=daemon_config),
+            patch("pdo.cli.daemon_cmd.stop_process", return_value=True) as stop_process,
+            patch("pdo.cli.daemon_cmd.clean_stale_runtime") as cleanup,
+        ):
+            result = runner.invoke(cli, ["daemon", "stop", "--force"])
         assert result.exit_code == 0
-        assert "force-killed" in result.output
-        mock_kill.assert_called_once()
-        mock_remove.assert_called_once()
+        assert "stopped" in result.output.lower()
+        stop_process.assert_called_once()
+        cleanup.assert_called_once()
 
-    @patch("pdo.cli.client.send_command")
-    def test_daemon_stop_fallback_hint(self, mock_cmd, runner: CliRunner) -> None:
-        mock_cmd.return_value = _mock_response(success=False, error="Version mismatch")
+    def test_daemon_stop_force_preserves_files_on_failure(
+        self, runner: CliRunner, daemon_config: PdoConfig
+    ) -> None:
+        with (
+            patch("pdo.cli.daemon_cmd.load_config", return_value=daemon_config),
+            patch("pdo.cli.daemon_cmd.stop_process", side_effect=RuntimeError("still running")),
+            patch("pdo.cli.daemon_cmd.clean_stale_runtime") as cleanup,
+        ):
+            result = runner.invoke(cli, ["daemon", "stop", "--force"])
+        assert result.exit_code == 1
+        assert "still running" in result.output
+        cleanup.assert_not_called()
+
+    @patch("pdo.cli.daemon_cmd.stop_shared_daemon", side_effect=RuntimeError("Version mismatch"))
+    def test_daemon_stop_fallback_hint(self, mock_stop, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["daemon", "stop"])
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         assert "pdo daemon stop" in result.output
         assert "--force" in result.output
         assert "pdo daemon repair" in result.output
 
-    @patch("pdo.daemon.pid.send_signal")
-    @patch("pdo.daemon.pid.remove_pid")
-    def test_daemon_repair(self, mock_remove, mock_kill, runner: CliRunner) -> None:
-        mock_kill.return_value = True
-        result = runner.invoke(cli, ["daemon", "repair"])
+    def test_daemon_repair(self, runner: CliRunner, daemon_config: PdoConfig) -> None:
+        with (
+            patch("pdo.cli.daemon_cmd.load_config", return_value=daemon_config),
+            patch("pdo.cli.daemon_cmd.stop_process", return_value=True) as stop_process,
+            patch("pdo.cli.daemon_cmd.clean_stale_runtime") as cleanup,
+        ):
+            result = runner.invoke(cli, ["daemon", "repair"])
         assert result.exit_code == 0
-        assert "Commencing daemon repair" in result.output
-        assert "Cleaned up stale PID" in result.output
-        mock_remove.assert_called_once()
+        assert "repaired" in result.output.lower()
+        stop_process.assert_called_once()
+        cleanup.assert_called_once()
 
 
 # ── Import Command ───────────────────────────────────────────────────

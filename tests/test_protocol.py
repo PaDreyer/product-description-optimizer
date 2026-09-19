@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import os
 import socket
-import tempfile
 import threading
+import time
 
 import pytest
 
@@ -15,11 +14,16 @@ from pdo.protocol.messages import Request, Response, receive_message, send_messa
 
 class TestRequest:
     def test_round_trip(self) -> None:
-        req = Request(action="import", payload={"csv_path": "/tmp/data.csv"})
+        req = Request(
+            action="import",
+            payload={"csv_path": "/tmp/data.csv"},
+            auth_token="test-token",
+        )
         raw = req.to_json()
         restored = Request.from_json(raw)
         assert restored.action == "import"
         assert restored.payload["csv_path"] == "/tmp/data.csv"
+        assert restored.auth_token == "test-token"
 
     def test_from_json_missing_action(self) -> None:
         with pytest.raises(ProtocolError, match="action"):
@@ -63,66 +67,57 @@ class TestResponse:
 class TestSocketHelpers:
     def test_send_and_receive(self) -> None:
         """Send a Request through a real socket pair and read it back."""
-        fd, sock_path = tempfile.mkstemp(suffix=".sock", dir="/tmp")
-        os.close(fd)
-        os.unlink(sock_path)  # mkstemp creates the file; we just need the name
-        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(sock_path)
-        server.listen(1)
+        client, server = socket.socketpair()
 
         received: list[dict] = []
 
         def _server_thread() -> None:
-            conn, _ = server.accept()
             try:
-                msg = receive_message(conn)
+                msg = receive_message(server)
                 received.append(msg)
             finally:
-                conn.close()
+                server.close()
 
         t = threading.Thread(target=_server_thread)
         t.start()
 
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.connect(sock_path)
         send_message(client, Request(action="ping"))
         client.close()
 
         t.join(timeout=2.0)
-        server.close()
-        os.unlink(sock_path)
 
         assert len(received) == 1
         assert received[0]["action"] == "ping"
 
     def test_receive_empty_connection(self) -> None:
         """Receive should raise on an immediately closed connection."""
-        fd, sock_path = tempfile.mkstemp(suffix=".sock", dir="/tmp")
-        os.close(fd)
-        os.unlink(sock_path)
-        server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        server.bind(sock_path)
-        server.listen(1)
+        client, server = socket.socketpair()
 
         error_raised = threading.Event()
 
         def _server_thread() -> None:
-            conn, _ = server.accept()
             try:
-                receive_message(conn)
+                receive_message(server)
             except ProtocolError:
                 error_raised.set()
             finally:
-                conn.close()
+                server.close()
 
         t = threading.Thread(target=_server_thread)
         t.start()
 
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        client.connect(sock_path)
         client.close()  # immediately close
 
         t.join(timeout=2.0)
-        server.close()
-        os.unlink(sock_path)
         assert error_raised.is_set()
+
+    def test_receive_deadline_rejects_incomplete_client(self) -> None:
+        """A client cannot hold the daemon's only request thread indefinitely."""
+        client, server = socket.socketpair()
+        try:
+            client.sendall(b'{"action":')
+            with pytest.raises(TimeoutError):
+                receive_message(server, deadline=time.monotonic() + 0.05)
+        finally:
+            client.close()
+            server.close()

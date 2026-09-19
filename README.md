@@ -10,7 +10,7 @@ PDO is an AI-powered desktop app and CLI for importing, improving, reviewing, an
 - **Flexible AI integration:** Connect cloud or locally hosted models. Built-in adapters currently support Google Gemini, ZhipuAI, and OpenAI-compatible servers such as Ollama or LM Studio.
 - **Reviewable results:** Watch progress, inspect original and revised descriptions, pause or resume between products, and export completed rows.
 - **Local project state:** SQLite stores progress after every product so a stopped run can continue with remaining rows.
-- **Desktop and automation:** Use the PySide6 application on Linux or Windows, or the existing CLI and daemon on Linux.
+- **Desktop and automation:** The PySide6 GUI and CLI are clients of the same background daemon, so progress continues when the window is closed.
 
 ## Install
 
@@ -31,11 +31,15 @@ On Windows, run `.\scripts\setup-dev.ps1` in PowerShell and activate
 
 Choose a CSV file, mark at least one column as **Description**, select an AI backend, and export the completed rows. API keys entered in the desktop app are saved in `~/.pdo/config.toml`; on Linux the file is created with owner-only permissions. Environment variables `GEMINI_API_KEY` and `ZHIPUAI_API_KEY` also work.
 
+The desktop application starts the PDO daemon automatically. On Linux it registers the tray icon through the StatusNotifierItem D-Bus protocol; a StatusNotifier host must be available (for example, KDE Plasma or GNOME with the AppIndicator extension). On Windows it uses the native Qt tray. Closing the window moves the GUI to the tray while imports, optimization, and exports continue. Click the tray icon or choose **Open** from its menu to reopen the window. **Quit** stops the daemon and closes the GUI. If no tray host is available, closing the window exits the GUI client while the daemon continues; use `pdo daemon stop` to stop it. If the host disappears later, PDO restores the window. Opening PDO again reconnects to the same daemon state.
+
+If startup fails, check `~/.pdo/logs/daemon-startup.log` and `~/.pdo/logs/daemon.log`. The source-install CLI can show daemon status with `pdo daemon status` and stop an unresponsive daemon with `pdo daemon repair`.
+
 The demo backend changes text to uppercase and is meant only to check the import and export flow. Choose an AI backend for useful descriptions. A local server must already be running and have the model you enter in the app. Cloud providers receive the mapped description and context fields; use a local server when the product data must stay on your computer.
 
 ## CLI
 
-The Unix-socket daemon and CLI are available for scripts on Linux. Stop the daemon before opening the desktop app because both use the same local database.
+The CLI is available from a Python installation on Linux and Windows. It connects to the same user-local daemon as the desktop application, so both interfaces can be open at the same time. The Windows installer contains the GUI; install the Python package separately to use the CLI there.
 
 ```bash
 python -m pip install -e '.[gemini,zhipuai,openai]'

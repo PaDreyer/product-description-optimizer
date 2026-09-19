@@ -1,8 +1,4 @@
-"""Thin IPC client — used by every CLI command to talk to the daemon.
-
-Connects to the daemon's Unix domain socket, sends a JSON request,
-and returns the parsed response.
-"""
+"""Thin IPC client used by CLI and desktop clients."""
 
 from __future__ import annotations
 
@@ -10,6 +6,7 @@ import socket
 from typing import Any
 
 from pdo.config import PdoConfig, load_config
+from pdo.daemon.endpoint import read_endpoint
 from pdo.exceptions import DaemonNotRunningError, ProtocolError
 from pdo.protocol.messages import (
     Request,
@@ -21,24 +18,30 @@ from pdo.protocol.messages import (
 _TIMEOUT = 10.0  # seconds
 
 
-def connect(config: PdoConfig | None = None) -> socket.socket:
-    """Open a connection to the daemon socket.
+def connect(config: PdoConfig | None = None) -> tuple[socket.socket, str]:
+    """Open a connection to the daemon's loopback endpoint.
+
+    Args:
+        config: Optional config override.
+
+    Returns:
+        Connected TCP socket and the endpoint authentication token.
 
     Raises:
-        DaemonNotRunningError: If the daemon is not running or the socket
-            file does not exist.
+        DaemonNotRunningError: If the daemon is not running or unreachable.
     """
     cfg = config or load_config()
-    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    endpoint = read_endpoint(cfg)
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(_TIMEOUT)
     try:
-        sock.connect(str(cfg.socket_path))
-    except (ConnectionRefusedError, FileNotFoundError, OSError) as exc:
+        sock.connect(("127.0.0.1", endpoint.port))
+    except OSError as exc:
         sock.close()
         raise DaemonNotRunningError(
             "Cannot connect to daemon. Is it running? Try: pdo daemon start"
         ) from exc
-    return sock
+    return sock, endpoint.token
 
 
 def send_command(
@@ -60,9 +63,9 @@ def send_command(
     Raises:
         DaemonNotRunningError: If the daemon is unreachable.
     """
-    sock = connect(config)
+    sock, token = connect(config)
     try:
-        request = Request(action=action, payload=payload or {})
+        request = Request(action=action, payload=payload or {}, auth_token=token)
         send_message(sock, request)
         raw = receive_message(sock)
         return Response(**raw)

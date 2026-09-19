@@ -28,6 +28,7 @@ session-ses_*.md
 .pytest_cache/
 
 # PDO data (daemon runtime state)
+*.endpoint
 *.db
 *.pid
 *.lock

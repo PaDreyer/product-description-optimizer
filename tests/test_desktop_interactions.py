@@ -15,6 +15,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QDialogButtonBox,
     QFileDialog,
     QLineEdit,
     QPushButton,
@@ -58,27 +59,54 @@ def named(window: DesktopWindow, text: str) -> QPushButton:
 
 
 def choose_file(action: QWidget, path: Path | None) -> None:
-    """Operate the actual Qt file dialog, including cancel, through key events."""
+    """Operate the actual Qt file dialog through bounded mouse/key events."""
     handled = []
+    failures = []
+    deadline = time.monotonic() + 5
+    timer = QTimer()
 
     def respond() -> None:
         dialog = QApplication.activeModalWidget()
-        if not isinstance(dialog, QFileDialog):
-            QTimer.singleShot(20, respond)
+        if time.monotonic() >= deadline:
+            failures.append(f"File dialog did not finish for {path!s}")
+            timer.stop()
+            if dialog is not None:
+                dialog.close()
             return
-        handled.append(True)
+        if not isinstance(dialog, QFileDialog):
+            return
         if path is None:
+            handled.append(True)
             QTest.keyClick(dialog, Qt.Key.Key_Escape)
-        else:
+        elif not handled:
+            handled.append(True)
             field = dialog.findChild(QLineEdit, "fileNameEdit")
-            assert field is not None
+            if field is None:
+                failures.append("File dialog has no filename input")
+                timer.stop()
+                dialog.reject()
+                return
             field.setFocus()
             QTest.keyClick(field, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
             QTest.keyClicks(field, str(path))
-            QTest.keyClick(field, Qt.Key.Key_Return)
+        else:
+            # Let Qt's filename completion settle before clicking Open/Save.
+            # An immediate Return can be consumed without accepting the dialog.
+            box = dialog.findChild(QDialogButtonBox)
+            if box is not None:
+                for item in box.buttons():
+                    if box.buttonRole(item) == QDialogButtonBox.ButtonRole.AcceptRole:
+                        if item.isEnabled():
+                            QTest.mouseClick(item, Qt.MouseButton.LeftButton)
+                        break
 
-    QTimer.singleShot(20, respond)
-    click(action)
+    timer.timeout.connect(respond)
+    timer.start(20)
+    try:
+        click(action)
+    finally:
+        timer.stop()
+    assert not failures, failures
     assert handled, "File dialog was not opened"
 
 

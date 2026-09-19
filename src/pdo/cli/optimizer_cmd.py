@@ -49,3 +49,28 @@ def list_cmd(ctx: click.Context) -> None:
         ctx.obj.out.print(f"  {icon} [bold]{opt.name:10s}[/bold] {opt.description}{suffix}{active}")
 
     ctx.obj.out.print(f"\n  Active: [bold cyan]{default}[/bold cyan]\n")
+
+
+@optimizer.command("login")
+@click.argument("provider", type=click.Choice(["openai"]))
+@global_options()
+@click.pass_context
+def login_cmd(ctx: click.Context, provider: str) -> None:
+    """Sign in to a ChatGPT subscription through an installed Codex CLI."""
+    from pdo.config import load_config
+    from pdo.core.codex_client import CodexClient
+    from pdo.exceptions import PdoError
+
+    config = load_config(config_file=ctx.obj.config_path)
+    try:
+        with CodexClient(
+            config.config_file_path.parent / "codex",
+            config.options.get("openai.codex_path", "codex"),
+        ) as client:
+            client.login()
+            models = client.models()
+        ctx.obj.out.result(success=True, provider=provider, models=models)
+        if not ctx.obj.json_output:
+            ctx.obj.out.print("ChatGPT angemeldet. Verfügbare Modelle: " + ", ".join(models))
+    except (PdoError, OSError) as exc:
+        raise click.ClickException(str(exc)) from exc

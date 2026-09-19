@@ -7,6 +7,7 @@ Each entry maps a short name to a factory function and metadata.
 from __future__ import annotations
 
 import os
+import shutil
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -14,6 +15,7 @@ from pdo.core.provider_defaults import (
     GEMINI_MODEL,
     LOCAL_LLM_ADDRESS,
     LOCAL_LLM_MODEL,
+    OPENAI_MODEL,
     ZHIPUAI_MODEL,
 )
 
@@ -64,10 +66,31 @@ def _check_zhipuai_available(config: PdoConfig | None = None) -> tuple[bool, str
     return True, ""
 
 
+def _check_openai_available(config: PdoConfig | None = None) -> tuple[bool, str]:
+    """Check prerequisites for the configured OpenAI authentication mode."""
+    mode = _get_opt(config, "openai.auth_mode", "api_key")
+    if mode == "chatgpt":
+        if not shutil.which(_get_opt(config, "openai.codex_path", "codex")):
+            return False, "Codex CLI not installed; install Codex or set openai.codex_path"
+        if not _get_opt(config, "openai.chatgpt_model", ""):
+            return False, "Sign in with ChatGPT and select a model in PDO settings"
+        return True, "ChatGPT login is checked when connecting"
+    if mode != "api_key":
+        return False, "openai.auth_mode must be api_key or chatgpt"
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        return False, "openai not installed (pip install 'pdo[openai]')"
+    if not (_get_opt(config, "openai.api_key", "") or os.environ.get("OPENAI_API_KEY", "")):
+        return False, "OPENAI_API_KEY not set in config or environment"
+    return True, ""
+
+
 def list_optimizers(config: PdoConfig | None = None) -> list[OptimizerInfo]:
     """Return metadata for every registered optimizer."""
     gemini_ok, gemini_reason = _check_gemini_available(config)
     zhipuai_ok, zhipuai_reason = _check_zhipuai_available(config)
+    openai_ok, openai_reason = _check_openai_available(config)
     return [
         OptimizerInfo(
             name="local_llm",
@@ -85,6 +108,12 @@ def list_optimizers(config: PdoConfig | None = None) -> list[OptimizerInfo]:
             description="ZhipuAI GLM models (glm-4, glm-4-plus) — two-step optimize + validate",
             available=zhipuai_ok,
             reason=zhipuai_reason,
+        ),
+        OptimizerInfo(
+            name="openai",
+            description="OpenAI — API key or ChatGPT subscription via Codex",
+            available=openai_ok,
+            reason=openai_reason,
         ),
         OptimizerInfo(
             name="dummy",
@@ -118,7 +147,7 @@ def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
     """Instantiate an optimizer by name.
 
     Args:
-        name: Registry name (``"gemini"``, ``"zhipuai"``, ``"local_llm"``, or ``"dummy"``).
+        name: Registry name (``openai``, ``gemini``, ``zhipuai``, ``local_llm``, or ``dummy``).
         config: Optional PdoConfig instance for fetching connection settings.
         **kwargs: Passed through to the optimizer constructor
             (e.g. ``api_key`` for Gemini).
@@ -128,11 +157,46 @@ def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
 
     Raises:
         ValueError: If the name is unknown or the backend is unavailable.
+        ConfigError: If OpenAI access settings are missing or invalid.
     """
     from pdo.core.optimizer import DummyOptimizer
 
     if name == "dummy":
         return DummyOptimizer()
+
+    if name == "openai":
+        from pdo.config import PdoConfig
+        from pdo.core.openai_optimizer import OpenAIOptimizer
+        from pdo.exceptions import ConfigError
+
+        mode = _get_opt(config, "openai.auth_mode", "api_key")
+        if mode == "chatgpt":
+            from pdo.core.codex_optimizer import CodexOptimizer
+
+            return CodexOptimizer(
+                home=(config or PdoConfig()).config_file_path.parent / "codex",
+                executable=_get_opt(config, "openai.codex_path", "codex"),
+                model=_get_opt(config, "openai.chatgpt_model", ""),
+                **_common_optimizer_kwargs(config),
+            )
+        if mode != "api_key":
+            raise ConfigError("openai.auth_mode must be api_key or chatgpt")
+
+        api_key = (
+            kwargs.get("api_key")
+            or _get_opt(config, "openai.api_key", "")
+            or os.environ.get("OPENAI_API_KEY", "")
+        )
+        if not api_key:
+            raise ConfigError(
+                "OpenAI requires an API key. Set OPENAI_API_KEY or use "
+                "'pdo config set openai.api_key <key>'."
+            )
+        return OpenAIOptimizer(
+            api_key=api_key,
+            model=kwargs.get("model") or _get_opt(config, "openai.model", OPENAI_MODEL),
+            **_common_optimizer_kwargs(config),
+        )
 
     if name == "gemini":
         try:

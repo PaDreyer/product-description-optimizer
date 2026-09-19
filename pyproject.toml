@@ -28,7 +28,7 @@ zhipuai = [
     "zhipuai>=2.0",
 ]
 openai = [
-    "openai>=1.0",
+    "openai>=1.66.0",
 ]
 desktop = [
     "PySide6>=6.8,<7",

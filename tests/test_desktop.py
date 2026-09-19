@@ -797,3 +797,159 @@ def test_window_close_quits_gui_after_tray_host_disappears(
         quit_app.assert_called_once()
         tray.stop.assert_called_once()
         assert send_command("ping", config=config).success
+
+
+def test_openai_settings_discover_select_save_and_restore(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    from pdo.core.provider_defaults import OPENAI_MODEL
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            window.show()
+            window._open_settings()
+            window.backend_box.setCurrentIndex(window.backend_box.findData("openai"))
+            assert window.key_input.isVisible()
+            assert window.connection_button.isVisible()
+            assert window.model_box.isVisible()
+            assert not window.address_input.isVisible()
+            assert window._provider_settings()["openai.model"] == OPENAI_MODEL
+            window.key_input.setText("new-key")
+            with patch.object(
+                window.session, "openai_models", return_value=["gpt-5-mini", "gpt-4.1"]
+            ) as discover:
+                window._check_connection()
+                _process_until(qapp, lambda: window.model_box.count() == 2)
+            discover.assert_called_once_with("new-key")
+            window.model_box.setCurrentText("gpt-4.1")
+            window._save_settings()
+            saved = load_config(config_file=config.config_file_path)
+            assert saved.optimizer == "openai"
+            assert saved.options["openai.api_key"] == "new-key"
+            assert saved.options["openai.model"] == "gpt-4.1"
+            assert window._provider_settings()["openai.model"] == "gpt-4.1"
+            window._open_settings()
+            window.manual_model.setChecked(True)
+            window.model_input.setText("future-model")
+            assert window._provider_settings()["openai.model"] == "future-model"
+            window._cancel_settings()
+            assert window._provider_settings()["openai.model"] == "gpt-4.1"
+            window.backend_box.setCurrentIndex(window.backend_box.findData("local_llm"))
+            with pytest.raises(ValueError, match="Prüfe zuerst"):
+                window._provider_settings()
+        finally:
+            window._exit_gui()
+
+
+def test_openai_model_discovery_ignores_old_credentials_and_provider(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            window.backend_box.setCurrentIndex(window.backend_box.findData("openai"))
+            with patch.object(window, "_submit") as submit:
+                window._check_connection()
+                old_finished = submit.call_args.args[1]
+                window.key_input.setText("changed-key")
+                old_finished(["stale-key-model"])
+                assert window.model_box.findText("stale-key-model") == -1
+                window._check_connection()
+                old_finished = submit.call_args.args[1]
+                window.backend_box.setCurrentIndex(window.backend_box.findData("gemini"))
+                old_finished(["stale-provider-model"])
+                assert window.model_box.findText("stale-provider-model") == -1
+        finally:
+            window._exit_gui()
+
+
+def test_openai_subscription_keeps_api_and_subscription_models_separate(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    save_config_values(
+        config.config_file_path,
+        {"optimizer": "openai", "openai.api_key": "saved-key", "openai.model": "api-model"},
+    )
+    config = load_config(
+        config_file=config.config_file_path,
+        overrides={"data_dir": str(config.data_dir), "log_dir": str(config.log_dir)},
+    )
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            window.show()
+            window._open_settings()
+            window.openai_auth_box.setCurrentIndex(window.openai_auth_box.findData("chatgpt"))
+            assert not window.key_input.isVisible()
+            assert window.chatgpt_login_button.isVisible()
+            assert window.model_box.count() == 0
+            with pytest.raises(ValueError, match="ChatGPT"):
+                window._provider_settings()
+            with patch.object(
+                window.session, "chatgpt_models", return_value=["codex-first", "codex-second"]
+            ) as models:
+                window.chatgpt_login_button.click()
+                _process_until(qapp, lambda: window.model_box.count() == 2)
+            models.assert_called_once_with(login=True)
+            window.model_box.setCurrentText("codex-second")
+            window._save_settings()
+            assert window._provider_settings()["openai.chatgpt_model"] == "codex-second"
+            saved = load_config(config_file=config.config_file_path)
+            assert saved.options["openai.auth_mode"] == "chatgpt"
+            assert saved.options["openai.api_key"] == "saved-key"
+            assert saved.options["openai.model"] == "api-model"
+            assert saved.options["openai.chatgpt_model"] == "codex-second"
+            window._open_settings()
+            window.openai_auth_box.setCurrentIndex(window.openai_auth_box.findData("api_key"))
+            assert window._provider_settings()["openai.model"] == "api-model"
+            window._cancel_settings()
+            assert window.openai_auth_box.currentData() == "chatgpt"
+            assert window._provider_settings()["openai.chatgpt_model"] == "codex-second"
+        finally:
+            window._exit_gui()
+
+
+@pytest.mark.parametrize("finished_before_cancel", [False, True])
+def test_cancel_openai_settings_restores_model_after_discovery(
+    tmp_path: Path, qapp: QApplication, finished_before_cancel: bool
+) -> None:
+    from pdo.desktop.app import DesktopWindow
+
+    config = _config(tmp_path)
+    save_config_values(
+        config.config_file_path,
+        {"optimizer": "openai", "openai.api_key": "test", "openai.model": "saved-model"},
+    )
+    config = load_config(
+        config_file=config.config_file_path,
+        overrides={"data_dir": str(config.data_dir), "log_dir": str(config.log_dir)},
+    )
+    with _running_daemon(config), patch.object(DesktopWindow, "_create_tray", return_value=None):
+        window = DesktopWindow(DesktopSession(config, auto_start=False))
+        try:
+            window._open_settings()
+            with patch.object(window, "_submit") as submit:
+                window._check_connection()
+                finished = submit.call_args.args[1]
+                if finished_before_cancel:
+                    finished(["unsaved-model"])
+                window._cancel_settings()
+                if not finished_before_cancel:
+                    finished(["unsaved-model"])
+            assert window._provider_settings()["openai.model"] == "saved-model"
+            assert window.connection_button.isEnabled()
+            assert (
+                load_config(config_file=config.config_file_path).options["openai.model"]
+                == "saved-model"
+            )
+        finally:
+            window._exit_gui()

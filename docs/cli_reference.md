@@ -197,7 +197,7 @@ PDO uses layered configuration (highest priority first):
 
 Only wired command options override an operation. See the `--config` limitation above. `PDO_` names are lowercased after removing the prefix: `PDO_TARGET_SENTENCES` becomes `target_sentences`. Underscores are not converted into dots, so `PDO_GEMINI_API_KEY` does not set `gemini.api_key`.
 
-Provider credentials have separate lookup rules: a nonempty `gemini.api_key` or `zhipuai.api_key` setting takes precedence over `GEMINI_API_KEY` or `ZHIPUAI_API_KEY`. Those provider environment variables are fallbacks, not overrides of saved keys.
+Provider credentials have separate lookup rules: nonempty `openai.api_key`, `gemini.api_key`, and `zhipuai.api_key` settings take precedence over their respective `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `ZHIPUAI_API_KEY` variables. Those provider environment variables are fallbacks, not overrides of saved keys.
 
 A daemon keeps the configuration loaded at startup. After `pdo config set`, restart it once the current job has finished, or use `pdo optimize --optimizer NAME` to save that backend and reload file settings before a new run. Desktop settings are saved and applied through the daemon while idle. Environment changes require restarting the daemon from the environment containing the new values.
 
@@ -205,6 +205,7 @@ A daemon keeps the configuration loaded at startup. After `pdo config set`, rest
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `OPENAI_API_KEY` | — | OpenAI API key (separate API billing) |
 | `GEMINI_API_KEY` | — | Google Gemini API key |
 | `ZHIPUAI_API_KEY` | — | ZhipuAI API key (GLM models) |
 | `PDO_DATA_DIR` | `~/.pdo/data` | Database, PID, endpoint, and lock files |
@@ -219,7 +220,7 @@ Use absolute paths for `data_dir` and `log_dir`; TOML path strings are not expan
 
 ### Optimizer Tuning
 
-The shared tuning keys below apply to AI backends; demo mode ignores them. The `optimizer` key selects `auto` (default), `gemini`, `zhipuai`, `local_llm`, or `dummy`:
+The shared tuning keys below apply to AI backends; demo mode ignores them. The `optimizer` key selects `auto` (default), `openai`, `gemini`, `zhipuai`, `local_llm`, or `dummy`:
 
 ```bash
 pdo config set optimizer local_llm
@@ -250,6 +251,39 @@ pdo config set style_instructions "Start with the product, then benefits, end wi
 
 #### Backend-Specific Settings
 
+**OpenAI:**
+
+| Config key | Default | Description |
+|------------|---------|-------------|
+| `openai.auth_mode` | `api_key` | `api_key` for the Responses API; `chatgpt` for a subscription through Codex |
+| `openai.api_key` | — | API key (alternative to `OPENAI_API_KEY`) |
+| `openai.model` | `gpt-5.6-luna` | Responses-compatible text model for API access |
+| `openai.chatgpt_model` | — | Model selected from the authenticated Codex model list |
+| `openai.codex_path` | `codex` | Installed Codex executable on PATH, or its absolute path |
+
+API setup:
+
+```bash
+pdo config set optimizer openai
+pdo config set openai.auth_mode api_key
+pdo config set openai.api_key YOUR_API_KEY
+pdo config set openai.model gpt-5.6-luna
+```
+
+Subscription setup (requires a separate [Codex CLI installation](https://learn.chatgpt.com/docs/codex/cli)):
+
+```bash
+pdo optimizer login openai
+# Complete the browser login; the command prints the available model IDs.
+pdo config set optimizer openai
+pdo config set openai.auth_mode chatgpt
+pdo config set openai.chatgpt_model MODEL_ID_FROM_LOGIN
+```
+
+`pdo optimizer login openai` honors the root `--config` option and supports `--json`. It logs in and lists models without switching the selected backend. Credentials stay in the adjacent `codex/` directory, normally `~/.pdo/codex/`, managed by Codex. PDO does not import another Codex profile. Login is bounded to three minutes; model requests to three minutes per step. No automatic API fallback occurs.
+
+The GUI can discover models for either mode. The API model list excludes known image, audio, search, and coding-only families, but the listing endpoint does not certify Responses compatibility; manual IDs remain available. API requests use `store=false`. The shared temperature settings are sent only for GPT-4.1/GPT-4o API models; other API models and subscription access retain provider sampling defaults. Both modes send separate generation and validation requests.
+
 **Gemini:**
 
 | Config key | Default | Description |
@@ -277,7 +311,7 @@ These are PDO's code defaults, not a guarantee that a provider currently serves 
 
 | Config key | Meaning |
 | --- | --- |
-| `gemini.manual_model`, `zhipuai.manual_model`, `local_llm.manual_model` | Desktop advanced-model toggle, saved as `true` or `false`; the registry itself uses the corresponding `.model` value |
+| `openai.manual_model`, `gemini.manual_model`, `zhipuai.manual_model`, `local_llm.manual_model` | Desktop advanced-model toggle, saved as `true` or `false`; the registry itself uses the corresponding `.model` value |
 | `export.format` | JSON-encoded CSV format saved when remembering the desktop export format; ignored by CLI export |
 
 Use the desktop controls to change these preferences. Export formats cover encoding, delimiter, BOM, line endings, quote character, minimal/all quoting, quote escaping, and headers.

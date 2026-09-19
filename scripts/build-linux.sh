@@ -24,7 +24,8 @@ cd "$project_root"
 
 QT_QPA_PLATFORM=offscreen "$build_python" -m pytest \
   tests/test_desktop.py tests/test_linux_tray.py tests/test_integration.py \
-  tests/test_importer.py tests/test_exporter.py -q
+  tests/test_importer.py tests/test_exporter.py \
+  tests/test_openai_optimizer.py tests/test_codex_client.py -q
 
 appstreamcli validate --no-net \
   "$project_root/packaging/linux/io.github.PaDreyer.pdo.appdata.xml"

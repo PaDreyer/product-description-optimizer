@@ -32,7 +32,8 @@ try {
     $env:QT_QPA_PLATFORM = "offscreen"
     & $BuildPython -m pytest tests/test_cli.py tests/test_desktop.py `
         tests/test_daemon.py::TestPidManagement tests/test_protocol.py `
-        tests/test_integration.py tests/test_importer.py tests/test_exporter.py -q
+        tests/test_integration.py tests/test_importer.py tests/test_exporter.py `
+        tests/test_openai_optimizer.py tests/test_codex_client.py -q
     Assert-NativeCommandSucceeded "CLI, desktop, and pipeline tests"
 
     $SpecDir = Join-Path $ProjectRoot "build\spec"

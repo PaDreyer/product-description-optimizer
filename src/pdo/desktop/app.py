@@ -45,6 +45,7 @@ from pdo.core.csv_format import CsvFormat
 from pdo.core.provider_defaults import (
     GEMINI_MODEL,
     LOCAL_LLM_ADDRESS,
+    OPENAI_MODEL,
     ZHIPUAI_MODEL,
 )
 from pdo.desktop.controls import ContentTabs, CsvFormatEditor, button, combo
@@ -178,6 +179,7 @@ class DesktopWindow(QMainWindow):
         self._tray_notice_shown = self._polling = False
         self._models: list[str] = []
         self._model_address = ""
+        self._model_backend = ""
         self._status_generation = 0
         self._model_generation = 0
         self._export_generation = 0
@@ -575,10 +577,20 @@ class DesktopWindow(QMainWindow):
                 ("Lokaler KI-Server", "local_llm"),
                 ("Google Gemini", "gemini"),
                 ("ZhipuAI", "zhipuai"),
+                ("OpenAI", "openai"),
                 ("Demo · nur Großschreibung", "dummy"),
             ]
         )
         form.addRow("Anbieter", self.backend_box)
+        self.openai_auth_box = combo(
+            [
+                ("API-Schlüssel · separate Abrechnung", "api_key"),
+                ("ChatGPT-Abonnement · über Codex", "chatgpt"),
+            ]
+        )
+        form.addRow("Zugang", self.openai_auth_box)
+        self.chatgpt_login_button = button("Mit ChatGPT anmelden …", self._login_chatgpt)
+        form.addRow(self.chatgpt_login_button)
         self.key_input = QLineEdit()
         self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
         self.key_input.setPlaceholderText("Gespeicherten Schlüssel behalten / Umgebung verwenden")
@@ -610,19 +622,28 @@ class DesktopWindow(QMainWindow):
         self.manual_model.toggled.connect(self._provider_visibility)
         self.model_box.currentIndexChanged.connect(self._update_provider)
         self.address_input.textChanged.connect(self._address_changed)
+        self.key_input.textChanged.connect(self._key_changed)
+        self.openai_auth_box.currentIndexChanged.connect(self._openai_auth_changed)
         return page
 
     def _provider_visibility(self) -> None:
         backend = self.backend_box.currentData()
-        local, cloud = backend == "local_llm", backend in ("gemini", "zhipuai")
+        local, cloud = backend == "local_llm", backend in ("gemini", "zhipuai", "openai")
+        subscription = backend == "openai" and self.openai_auth_box.currentData() == "chatgpt"
         for widget, visible in (
-            (self.key_input, cloud),
+            (self.key_input, cloud and not subscription),
+            (self.openai_auth_box, backend == "openai"),
+            (self.chatgpt_login_button, subscription),
             (self.address_input, local),
-            (self.connection_button, local),
-            (self.connection_label, local),
+            (self.connection_button, local or backend == "openai"),
+            (self.connection_label, local or backend == "openai"),
             (self.manual_model, backend != "dummy"),
             (self.model_input, backend != "dummy" and self.manual_model.isChecked()),
-            (self.model_box, local and len(self._models) > 1 and not self.manual_model.isChecked()),
+            (
+                self.model_box,
+                (backend == "openai" or (local and len(self._models) > 1))
+                and not self.manual_model.isChecked(),
+            ),
         ):
             self.settings_form.setRowVisible(widget, visible)
         self._update_provider()
@@ -630,10 +651,27 @@ class DesktopWindow(QMainWindow):
     def _backend_changed(self, _: int = 0) -> None:
         backend = self.backend_box.currentData()
         options = self.session.config.options
+        self.openai_auth_box.blockSignals(True)
+        self.openai_auth_box.setCurrentIndex(
+            max(0, self.openai_auth_box.findData(options.get("openai.auth_mode", "api_key")))
+        )
+        self.openai_auth_box.blockSignals(False)
         self.key_input.clear()
         self.manual_model.setChecked(options.get(f"{backend}.manual_model", "false") == "true")
-        defaults = {"gemini": GEMINI_MODEL, "zhipuai": ZHIPUAI_MODEL, "local_llm": ""}
-        self.model_input.setText(options.get(f"{backend}.model", defaults.get(backend, "")))
+        defaults = {
+            "gemini": GEMINI_MODEL,
+            "zhipuai": ZHIPUAI_MODEL,
+            "local_llm": "",
+            "openai": OPENAI_MODEL,
+        }
+        self.model_input.setText(options.get(self._model_key(), defaults.get(backend, "")))
+        model_backend = self._model_key()
+        if model_backend != self._model_backend:
+            self._model_backend = model_backend
+            self._address_changed()
+            self.model_box.clear()
+            if backend == "openai":
+                self._openai_auth_changed()
         self._provider_visibility()
 
     def _load_settings(self, *, preserve_text: bool = False) -> None:
@@ -644,8 +682,15 @@ class DesktopWindow(QMainWindow):
             self.style_input.setPlainText(config.options.get("style_instructions", ""))
             self.sentences.setValue(int(config.options.get("target_sentences", 3)))
         self._backend_changed()
-        saved_model = config.options.get("local_llm.model", "")
-        if saved_model in self._models:
+        saved_model = config.options.get(self._model_key(), "")
+        if self.backend_box.currentData() == "openai":
+            if self.openai_auth_box.currentData() == "api_key" and not saved_model:
+                saved_model = OPENAI_MODEL
+            if saved_model and self.model_box.findText(saved_model) < 0:
+                self.model_box.addItem(saved_model)
+            elif not saved_model:
+                self.model_box.clear()
+        if self.model_box.findText(saved_model) >= 0:
             self.model_box.setCurrentText(saved_model)
 
     def _address_changed(self) -> None:
@@ -653,8 +698,44 @@ class DesktopWindow(QMainWindow):
         self._model_address = ""
         self._model_generation += 1
         self.connection_button.setEnabled(True)
+        self.chatgpt_login_button.setEnabled(True)
         self.connection_label.setText("Verbindung noch nicht geprüft.")
         self._provider_visibility()
+
+    def _key_changed(self) -> None:
+        if (
+            self.backend_box.currentData() == "openai"
+            and self.openai_auth_box.currentData() == "api_key"
+        ):
+            self._address_changed()
+            self.model_box.clear()
+            self.model_box.addItem(self.session.config.options.get("openai.model") or OPENAI_MODEL)
+
+    def _model_key(self) -> str:
+        backend = self.backend_box.currentData()
+        if backend == "openai" and self.openai_auth_box.currentData() == "chatgpt":
+            return "openai.chatgpt_model"
+        return f"{backend}.model"
+
+    def _openai_auth_changed(self, _: int = 0) -> None:
+        self._model_backend = self._model_key()
+        self._address_changed()
+        self.model_box.clear()
+        subscription = self.openai_auth_box.currentData() == "chatgpt"
+        saved = self.session.config.options.get(self._model_key(), "")
+        model = saved or ("" if subscription else OPENAI_MODEL)
+        if model:
+            self.model_box.addItem(model)
+        self.model_input.setText(model)
+        self.connection_label.setText(
+            "Codex CLI erforderlich. Mit ChatGPT anmelden und Modelle laden."
+            if subscription
+            else "API-Schlüssel prüfen und verfügbare Modelle laden."
+        )
+        self._provider_visibility()
+
+    def _login_chatgpt(self) -> None:
+        self._check_connection(login=True)
 
     def _update_provider(self) -> None:
         backend = self.backend_box.currentData()
@@ -668,8 +749,18 @@ class DesktopWindow(QMainWindow):
             "local_llm": "Beschreibungen und Zusatzinfos gehen an die angegebene Serveradresse.",
             "gemini": "Beschreibungen und Zusatzinfos werden an Google Gemini gesendet.",
             "zhipuai": "Beschreibungen und Zusatzinfos werden an ZhipuAI gesendet.",
+            "openai": (
+                "Beschreibungen und Zusatzinfos werden an OpenAI gesendet. "
+                "Die API wird separat vom ChatGPT-Abonnement nach Nutzung abgerechnet."
+            ),
             "dummy": "Demo verarbeitet auf diesem Computer und schreibt nur Großbuchstaben.",
         }[backend]
+        subscription = backend == "openai" and self.openai_auth_box.currentData() == "chatgpt"
+        if subscription:
+            text = (
+                "Beschreibungen und Zusatzinfos werden über Codex an OpenAI gesendet. "
+                "Es gelten die Modelle und Nutzungslimits deines ChatGPT-Zugangs."
+            )
         self.data_flow_label.setText(text)
         self.settings_note.setText(text)
         if backend == "local_llm":
@@ -683,27 +774,53 @@ class DesktopWindow(QMainWindow):
                 self.provider_state.setText(f"Verbunden · {self.model_box.currentText()}")
             else:
                 self.provider_state.setText("Verbindung in den Einstellungen prüfen.")
+        elif subscription:
+            self.provider_state.setText(
+                f"ChatGPT · {self.model_box.currentText()}"
+                if self.model_box.currentText()
+                else "Mit ChatGPT anmelden und ein Modell auswählen."
+            )
         elif demo:
             self.provider_state.setText("Demo ohne KI")
         else:
             configured = self.session.config.options.get(f"{backend}.api_key") or os.environ.get(
-                {"gemini": "GEMINI_API_KEY", "zhipuai": "ZHIPUAI_API_KEY"}[backend]
+                {
+                    "gemini": "GEMINI_API_KEY",
+                    "zhipuai": "ZHIPUAI_API_KEY",
+                    "openai": "OPENAI_API_KEY",
+                }[backend]
             )
             model = (
                 "Manuell gewähltes Modell" if self.manual_model.isChecked() else "Standardmodell"
             )
+            if backend == "openai":
+                model = (
+                    self.model_input.text().strip()
+                    if self.manual_model.isChecked()
+                    else self.model_box.currentText()
+                )
             self.provider_state.setText(
                 f"Zugang hinterlegt · {model}"
                 if configured
                 else "API-Schlüssel in den Einstellungen hinterlegen."
             )
 
-    def _check_connection(self) -> None:
+    def _check_connection(self, *, login: bool = False) -> None:
+        backend = self.backend_box.currentData()
+        model_key = self._model_key()
         address = self.address_input.text().strip()
+        api_key = (
+            self.key_input.text().strip()
+            or self.session.config.options.get("openai.api_key", "")
+            or os.environ.get("OPENAI_API_KEY", "")
+        )
         self._model_generation += 1
         generation = self._model_generation
         self.connection_button.setEnabled(False)
-        self.connection_label.setText("Verbindung wird geprüft …")
+        self.chatgpt_login_button.setEnabled(False)
+        self.connection_label.setText(
+            "Anmeldung im Browser abschließen …" if login else "Verbindung wird geprüft …"
+        )
 
         def finished(models: list[str]) -> None:
             if generation != self._model_generation:
@@ -711,11 +828,14 @@ class DesktopWindow(QMainWindow):
             self._models, self._model_address = models, address
             self.model_box.clear()
             self.model_box.addItems(models)
-            previous = self.session.config.options.get("local_llm.model", "")
+            previous = self.session.config.options.get(model_key, "")
+            if model_key == "openai.model" and not previous:
+                previous = OPENAI_MODEL
             if previous in models:
                 self.model_box.setCurrentText(previous)
             self.connection_label.setText(f"Verbunden · {len(models)} Modell(e) erkannt")
             self.connection_button.setEnabled(True)
+            self.chatgpt_login_button.setEnabled(True)
             self._provider_visibility()
 
         def failed(exc: Exception) -> None:
@@ -724,8 +844,16 @@ class DesktopWindow(QMainWindow):
                     str(exc) + " Manuelle Angabe unter Erweitert möglich."
                 )
                 self.connection_button.setEnabled(True)
+                self.chatgpt_login_button.setEnabled(True)
 
-        self._submit(lambda: self.session.models(address), finished, failed)
+        def discover() -> list[str]:
+            if model_key == "openai.chatgpt_model":
+                return self.session.chatgpt_models(login=login)
+            if backend == "openai":
+                return self.session.openai_models(api_key)
+            return self.session.models(address)
+
+        self._submit(discover, finished, failed)
 
     def _provider_settings(self) -> dict[str, str]:
         backend = self.backend_box.currentData()
@@ -735,6 +863,8 @@ class DesktopWindow(QMainWindow):
         }
         if backend == "dummy":
             return values
+        if backend == "openai":
+            values["openai.auth_mode"] = self.openai_auth_box.currentData()
         if backend == "local_llm":
             values["local_llm.address"] = self.address_input.text().strip()
             if not self.manual_model.isChecked():
@@ -743,7 +873,9 @@ class DesktopWindow(QMainWindow):
                         "Prüfe zuerst den lokalen Server oder lege das Modell unter Erweitert fest."
                     )
                 values["local_llm.model"] = self.model_box.currentText()
-        elif self.key_input.text().strip():
+        elif self.key_input.text().strip() and not (
+            backend == "openai" and self.openai_auth_box.currentData() == "chatgpt"
+        ):
             values[f"{backend}.api_key"] = self.key_input.text().strip()
         values[f"{backend}.manual_model"] = str(self.manual_model.isChecked()).lower()
         if self.manual_model.isChecked():
@@ -751,7 +883,11 @@ class DesktopWindow(QMainWindow):
                 raise ValueError(
                     "Gib eine Modellkennung ein oder verwende die automatische Auswahl."
                 )
-            values[f"{backend}.model"] = self.model_input.text().strip()
+            values[self._model_key()] = self.model_input.text().strip()
+        elif backend == "openai":
+            if not self.model_box.currentText():
+                raise ValueError("Melde dich mit ChatGPT an und wähle ein verfügbares Modell.")
+            values[self._model_key()] = self.model_box.currentText()
         elif backend != "local_llm":
             values[f"{backend}.model"] = {"gemini": GEMINI_MODEL, "zhipuai": ZHIPUAI_MODEL}[backend]
         return values
@@ -773,6 +909,9 @@ class DesktopWindow(QMainWindow):
 
     def _show_page(self, index: int) -> None:
         if self.pages.currentIndex() == 4 and index != 4:
+            self._model_generation += 1
+            self.connection_button.setEnabled(True)
+            self.chatgpt_login_button.setEnabled(True)
             self._load_settings(preserve_text=True)
             if self.backend_box.currentData() == "local_llm" and not self._models:
                 self._check_connection()
@@ -1468,6 +1607,7 @@ def main() -> int:
         assert list_optimizers()
         assert genai.Client(api_key="package-smoke-test").models
         assert OpenAI(base_url="http://127.0.0.1:1/v1", api_key="package-smoke-test").chat
+        assert OpenAI(base_url="http://127.0.0.1:1/v1", api_key="package-smoke-test").responses
         assert ZhipuAI(api_key="package-smoke-test.package-smoke-test").chat
         app = QApplication(["pdo-smoke-test"])
         with tempfile.TemporaryDirectory(prefix="pdo-smoke-") as temp_dir:

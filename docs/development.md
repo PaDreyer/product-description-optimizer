@@ -50,7 +50,7 @@ For focused validation, select the tests relevant to a change:
 | Desktop workflow and model discovery | `test_desktop.py`, `test_desktop_interactions.py` |
 | Tray | `test_linux_tray.py`, tray cases in `test_desktop.py` |
 | Daemon, protocol, lifecycle | `test_daemon.py`, `test_protocol.py`, `test_version_check.py`, `test_integration.py`, lifecycle cases in `test_desktop.py` |
-| AI adapters | `test_optimizer.py`, `test_gemini_optimizer.py`, `test_zhipuai_optimizer.py`, `test_local_llm_optimizer.py` |
+| AI adapters | `test_optimizer.py`, `test_gemini_optimizer.py`, `test_zhipuai_optimizer.py`, `test_local_llm_optimizer.py`, `test_openai_optimizer.py`, `test_codex_client.py` |
 
 For example:
 
@@ -69,6 +69,7 @@ The CLI and desktop session are clients of a single daemon per data directory. T
 - `daemon/lifecycle.py`, `pid.py`, and `core/instance_lock.py` serialize start/stop, validate process identity, and protect database ownership.
 - `protocol/messages.py` sends newline-delimited UTF-8 JSON with app version and authentication metadata. Update `PROTOCOL_REVISION` when new handlers are required by clients. Authenticated `ping` and `stop` remain usable across app versions.
 - `desktop/session.py` supplies the GUI's daemon operations; `desktop/app.py`, `controls.py`, and `linux_tray.py` implement the screens, shared controls, and Linux tray.
+- `core/openai_optimizer.py` uses the Responses API; `codex_optimizer.py` and `codex_client.py` implement optional subscription access through the official Codex stdio app-server. Codex is installed separately. Tests use a local protocol fixture without real credentials, browser login, or billable model calls.
 - `core/csv_format.py`, `error_groups.py`, and `model_discovery.py` support CSV dialects, bulk recovery, and model selection.
 
 The default runtime layout is:
@@ -76,6 +77,7 @@ The default runtime layout is:
 ```text
 ~/.pdo/
 ├── config.toml
+├── codex/                 # Optional PDO-specific Codex credentials and runtime state
 ├── data/
 │   ├── pdo.db              # SQLite; WAL sidecar files can exist while open
 │   ├── daemon.pid         # Daemon process identity

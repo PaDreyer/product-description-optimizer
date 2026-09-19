@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -10,7 +11,7 @@ from typing import Any
 from pdo.cli.client import send_command
 from pdo.config import PdoConfig, load_config
 from pdo.core.csv_format import CsvFormat, detect_format, read_encoding
-from pdo.core.model_discovery import discover_models
+from pdo.core.model_discovery import discover_models, discover_openai_models
 from pdo.daemon.launcher import ensure_daemon_running
 from pdo.daemon.lifecycle import stop_daemon as stop_shared_daemon
 from pdo.exceptions import ImportDataError
@@ -98,6 +99,7 @@ class DesktopSession:
 
     def __init__(self, config: PdoConfig | None = None, *, auto_start: bool = True) -> None:
         self.config = config or load_config()
+        self._closing = threading.Event()
         if auto_start:
             ensure_daemon_running(self.config)
 
@@ -208,6 +210,23 @@ class DesktopSession:
         """Discover models from a configured server; call outside the UI thread."""
         return discover_models(address)
 
+    def openai_models(self, api_key: str) -> list[str]:
+        """Discover OpenAI text models outside the UI thread using the supplied key."""
+        return discover_openai_models(api_key)
+
+    def chatgpt_models(self, *, login: bool = False) -> list[str]:
+        """Optionally log in through Codex, then list the subscription's models."""
+        from pdo.core.codex_client import CodexClient
+
+        with CodexClient(
+            self.config.config_file_path.parent / "codex",
+            self.config.options.get("openai.codex_path", "codex"),
+            cancel=self._closing,
+        ) as client:
+            if login:
+                client.login()
+            return client.models()
+
     def export_preview(self, format_: CsvFormat, scope: str) -> str:
         """Return a CSV preview using the actual exporter and product data."""
         return self._request("export_preview", {"format": format_.to_dict(), "scope": scope}).data[
@@ -224,6 +243,7 @@ class DesktopSession:
 
     def close(self) -> None:
         """Disconnect this client without stopping the daemon."""
+        self._closing.set()
 
     def stop_daemon(self) -> None:
         """Stop the shared daemon and wait for its process to exit."""

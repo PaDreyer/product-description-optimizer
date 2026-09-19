@@ -33,12 +33,20 @@ def start(ctx: click.Context, *, foreground: bool) -> None:
         sys.exit(1)
 
     from pdo.daemon.server import DaemonServer
+    from pdo.exceptions import InstanceAlreadyRunningError
 
     server = DaemonServer(config=config)
-    ctx.obj.out.result(
-        success=True, status="starting daemon", msg="[green]Starting daemon …[/green]"
-    )
-    server.start(foreground=foreground)
+
+    def report_starting() -> None:
+        ctx.obj.out.result(
+            success=True, status="starting daemon", msg="[green]Starting daemon …[/green]"
+        )
+
+    try:
+        server.start(foreground=foreground, on_starting=report_starting)
+    except InstanceAlreadyRunningError as exc:
+        ctx.obj.out.result(success=False, error=str(exc))
+        sys.exit(1)
 
 
 @daemon.command()

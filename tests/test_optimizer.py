@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import threading
+import time
+from collections.abc import Iterator
 
 import pytest
 
@@ -11,10 +13,10 @@ from pdo.core.optimizer import DummyOptimizer, Optimizer, run_optimization
 
 
 @pytest.fixture()
-def db() -> Database:
-    database = Database(":memory:")
-    database.initialize()
-    return database
+def db() -> Iterator[Database]:
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 def _seed_products(db: Database, count: int = 5) -> None:
@@ -134,6 +136,28 @@ class TestRunOptimization:
         assert not t.is_alive()
         assert len(result_holder) == 1
         assert result_holder[0].succeeded == 3
+
+    def test_pause_blocks_until_cleared(self, db: Database) -> None:
+        """A pause requested before processing must hold the first product."""
+        _seed_products(db, 2)
+        pause = threading.Event()
+        pause.set()
+        result_holder: list[OptimizationResult] = []
+        thread = threading.Thread(
+            target=lambda: result_holder.append(
+                run_optimization(db, DummyOptimizer(), pause_event=pause)
+            )
+        )
+        thread.start()
+        try:
+            time.sleep(0.2)
+            assert thread.is_alive()
+            assert db.get_progress()["done"] == 0
+        finally:
+            pause.clear()
+            thread.join(timeout=2)
+        assert not thread.is_alive()
+        assert result_holder[0].succeeded == 2
 
     def test_pipeline_state_returns_to_idle(self, db: Database) -> None:
         _seed_products(db, 2)

@@ -18,6 +18,7 @@ from google import genai
 from google.genai import types
 
 from pdo.core.base_llm_optimizer import BaseLLMOptimizer
+from pdo.core.provider_defaults import GEMINI_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class GeminiOptimizer(BaseLLMOptimizer):
            If validation fails, use the corrected suggestion instead.
 
     Args:
-        model: Gemini model name (default: ``gemini-2.0-flash``).
+        model: Gemini model name (default: ``gemini-3.6-flash``).
         api_key: API key. Falls back to ``GEMINI_API_KEY`` env var or ``gemini.api_key`` config.
         optimize_temperature: Sampling temperature for generation (default: 0.4).
         validate_temperature: Sampling temperature for validation (default: 0.1).
@@ -42,7 +43,7 @@ class GeminiOptimizer(BaseLLMOptimizer):
             Configure with: ``pdo config set style_instructions "..."``
     """
 
-    _DEFAULT_MODEL = "gemini-2.0-flash"
+    _DEFAULT_MODEL = GEMINI_MODEL
 
     def __init__(
         self,

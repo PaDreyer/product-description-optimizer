@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -68,6 +67,7 @@ class TestPromptContent:
         system_msg = first_call_args.kwargs["messages"][0]["content"]
         assert "Additional Instructions" not in system_msg
 
+
 def test_optimize_success(mock_openai_client):
     """Test a successful optimize flow where step 2 (validation) approves it."""
     optimizer = LocalLLMOptimizer(address="http://127.0.0.1:11434/v1")
@@ -96,17 +96,18 @@ def test_optimize_success(mock_openai_client):
     assert mock_openai_client.chat.completions.create.call_count == 2
 
 
-
 def test_optimize_validation_failure_uses_suggestion(mock_openai_client):
     """Test when validation fails and returns a corrected suggestion."""
     optimizer = LocalLLMOptimizer(address="http://127.0.0.1:1234/v1")
 
     mock_msg1 = MagicMock()
     mock_msg1.message.content = "Optimized but hallucinated features."
-    
+
     mock_msg2 = MagicMock()
-    mock_msg2.message.content = '{"approved": false, "issues": ["hallucination"], "suggestion": "Corrected text."}'
-    
+    mock_msg2.message.content = (
+        '{"approved": false, "issues": ["hallucination"], "suggestion": "Corrected text."}'
+    )
+
     mock_choices_1 = MagicMock()
     mock_choices_1.choices = [mock_msg1]
     mock_choices_2 = MagicMock()

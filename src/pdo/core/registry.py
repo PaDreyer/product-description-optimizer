@@ -10,14 +10,15 @@ import os
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from pdo.core.provider_defaults import (
+    GEMINI_MODEL,
+    LOCAL_LLM_ADDRESS,
+    LOCAL_LLM_MODEL,
+    ZHIPUAI_MODEL,
+)
+
 if TYPE_CHECKING:
     from pdo.config import PdoConfig
-
-# Defaults for the local_llm backend — override with:
-#   pdo config set local_llm_address <url>
-#   pdo config set local_llm_model   <model>
-_DEFAULT_LOCAL_LLM_ADDRESS = "http://127.0.0.1:11434/v1"
-_DEFAULT_LOCAL_LLM_MODEL = "local-model"
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ def list_optimizers(config: PdoConfig | None = None) -> list[OptimizerInfo]:
         ),
         OptimizerInfo(
             name="gemini",
-            description="Google Gemini 2.0 Flash — two-step optimize + validate",
+            description="Google Gemini — two-step optimize + validate",
             available=gemini_ok,
             reason=gemini_reason,
         ),
@@ -154,7 +155,8 @@ def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
                 "Set GEMINI_API_KEY or use 'pdo config set gemini.api_key <key>'"
             )
             raise ValueError(msg)
-        return GeminiOptimizer(api_key=api_key, **_common_optimizer_kwargs(config))
+        model = _get_opt(config, "gemini.model", GEMINI_MODEL)
+        return GeminiOptimizer(api_key=api_key, model=model, **_common_optimizer_kwargs(config))
 
     if name == "local_llm":
         try:
@@ -166,8 +168,8 @@ def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
             )
             raise ValueError(msg) from exc
 
-        address = _get_opt(config, "local_llm.address", _DEFAULT_LOCAL_LLM_ADDRESS)
-        model = _get_opt(config, "local_llm.model", _DEFAULT_LOCAL_LLM_MODEL)
+        address = _get_opt(config, "local_llm.address", LOCAL_LLM_ADDRESS)
+        model = _get_opt(config, "local_llm.model", LOCAL_LLM_MODEL)
         return LocalLLMOptimizer(address=address, model=model, **_common_optimizer_kwargs(config))
 
     if name == "zhipuai":
@@ -192,7 +194,7 @@ def create_optimizer(name: str, config: PdoConfig | None = None, **kwargs: Any):
             )
             raise ValueError(msg)
 
-        model = _get_opt(config, "zhipuai.model", "glm-4")
+        model = _get_opt(config, "zhipuai.model", ZHIPUAI_MODEL)
         return ZhipuAIOptimizer(
             api_key=api_key,
             model=model,

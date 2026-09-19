@@ -16,6 +16,7 @@ import os
 import time
 
 from pdo.core.base_llm_optimizer import BaseLLMOptimizer
+from pdo.core.provider_defaults import ZHIPUAI_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -41,7 +42,7 @@ class ZhipuAIOptimizer(BaseLLMOptimizer):
             Configure with: ``pdo config set style_instructions "..."``
     """
 
-    _DEFAULT_MODEL = "glm-4"
+    _DEFAULT_MODEL = ZHIPUAI_MODEL
 
     def __init__(
         self,

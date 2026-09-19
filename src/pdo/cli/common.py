@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any
 
 import click
 from rich.console import Console
@@ -27,7 +27,7 @@ class OutputManager:
     def error(self, message: str) -> None:
         """Print an error message. No-op if JSON output is enabled."""
         if not self.json_output:
-            console.print(f"[red]Error:[/red] {message}")
+            console.print(f"[red]Error:[/red] {message}", soft_wrap=True)
 
     def emit_json(self, data: dict[str, Any] | list[Any]) -> None:
         """Safely echo a JSON string. No-op if JSON output is NOT enabled."""
@@ -124,10 +124,7 @@ def global_options() -> Callable[[click.Command], click.Command]:
     return decorator
 
 
-T = TypeVar("T")
-
-
-def run_with_spinner(label: str, fn: Callable[[], T], *, json_output: bool) -> T:
+def run_with_spinner[T](label: str, fn: Callable[[], T], *, json_output: bool) -> T:
     """Execute *fn*, wrapping it in a Rich spinner when not in JSON mode.
 
     Eliminates the repeated ``if not json_output: with console.status(…)``
@@ -137,4 +134,3 @@ def run_with_spinner(label: str, fn: Callable[[], T], *, json_output: bool) -> T
         return fn()
     with console.status(label):
         return fn()
-

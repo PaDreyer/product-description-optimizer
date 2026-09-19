@@ -38,7 +38,7 @@ class TestGeminiOptimizerInit:
 
     def test_creates_with_api_key(self, mock_client) -> None:
         opt = GeminiOptimizer(api_key="test-key")
-        assert opt._model == "gemini-2.0-flash"
+        assert opt._model == "gemini-3.6-flash"
 
 
 class TestPromptContent:

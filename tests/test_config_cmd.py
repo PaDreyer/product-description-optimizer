@@ -1,3 +1,4 @@
+import os
 import tomllib
 from pathlib import Path
 
@@ -36,6 +37,8 @@ def test_config_set_and_get(tmp_path: Path, monkeypatch) -> None:
 
     # 3. Verify it was actually written to the file
     assert cfg_file.exists()
+    if os.name != "nt":
+        assert cfg_file.stat().st_mode & 0o077 == 0
     with cfg_file.open("rb") as f:
         data = tomllib.load(f)
         assert data["pdo"]["log_dir"] == "/tmp/custom_logs"
@@ -97,6 +100,11 @@ def test_config_malformed(tmp_path: Path, monkeypatch) -> None:
     result = runner.invoke(cli, ["config", "get", "key"])
     assert result.exit_code == 1
     assert "Failed to parse config file" in result.output
+
+    original = cfg_file.read_text()
+    result = runner.invoke(cli, ["config", "set", "key", "value"])
+    assert result.exit_code == 1
+    assert cfg_file.read_text() == original
 
 
 def test_config_not_a_dict(tmp_path: Path, monkeypatch) -> None:

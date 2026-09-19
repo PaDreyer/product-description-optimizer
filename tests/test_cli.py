@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ import pytest
 from click.testing import CliRunner
 
 from pdo.cli.main import cli
+from pdo.exceptions import InstanceAlreadyRunningError
 from pdo.protocol.messages import Response
 
 
@@ -55,6 +57,28 @@ class TestRootCli:
 
 
 class TestDaemonCommands:
+    @patch("pdo.daemon.server.DaemonServer.start")
+    @patch("pdo.cli.daemon_cmd.is_daemon_running", return_value=False)
+    def test_daemon_start_reports_locked_data_directory(
+        self, mock_running, mock_start, runner: CliRunner
+    ) -> None:
+        mock_start.side_effect = InstanceAlreadyRunningError("data directory is already in use")
+        result = runner.invoke(cli, ["daemon", "start"])
+        assert result.exit_code == 1
+        assert "already in use" in result.output
+
+    @patch("pdo.daemon.server.DaemonServer.start")
+    @patch("pdo.cli.daemon_cmd.is_daemon_running", return_value=False)
+    def test_daemon_start_lock_error_is_single_json_result(
+        self, mock_running, mock_start, runner: CliRunner
+    ) -> None:
+        mock_start.side_effect = InstanceAlreadyRunningError("locked")
+        result = runner.invoke(cli, ["--json", "daemon", "start"])
+        assert result.exit_code == 1
+        lines = result.output.strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0]) == {"success": False, "error": "locked"}
+
     @patch("pdo.cli.daemon_cmd.is_daemon_running", return_value=False)
     def test_daemon_status_stopped(self, mock_running, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["daemon", "status"])
@@ -168,9 +192,7 @@ class TestOptimizeCommand:
         )
         result = runner.invoke(cli, ["optimize", "--optimizer", "dummy"])
         assert result.exit_code == 0
-        mock_cmd.assert_called_once_with(
-            "optimize", payload={"optimizer": "dummy"}
-        )
+        mock_cmd.assert_called_once_with("optimize", payload={"optimizer": "dummy"})
 
     def test_optimize_unknown_backend(self, runner: CliRunner) -> None:
         result = runner.invoke(cli, ["optimize", "--optimizer", "doesnotexist"])

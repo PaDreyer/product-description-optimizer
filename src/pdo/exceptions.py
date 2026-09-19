@@ -17,6 +17,10 @@ class DaemonNotRunningError(PdoError):
     """Raised when the CLI cannot connect to the daemon."""
 
 
+class InstanceAlreadyRunningError(PdoError):
+    """Raised when another PDO process owns the shared data directory."""
+
+
 class DatabaseError(PdoError):
     """Raised on database access or integrity failures."""
 

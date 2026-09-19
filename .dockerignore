@@ -5,6 +5,8 @@
 .coverage
 venv
 .venv
+build
+dist
 env
 *.pyc
 __pycache__

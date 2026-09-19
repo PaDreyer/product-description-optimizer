@@ -20,9 +20,7 @@ from pdo.cli.common import global_options
 )
 @global_options()
 @click.pass_context
-def optimize(
-    ctx: click.Context, *, watch: bool, optimizer_name: str | None
-) -> None:
+def optimize(ctx: click.Context, *, watch: bool, optimizer_name: str | None) -> None:
     """Start optimizing imported products.
 
     Use --watch to see a live progress display until optimization completes.

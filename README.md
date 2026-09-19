@@ -1,96 +1,62 @@
 # PDO — Product Description Optimizer
 
-<p align="center">
-  <img src="docs/logo.png" alt="PDO Logo" width="150" />
-</p>
+PDO is an AI-powered desktop app and CLI for importing, improving, reviewing, and exporting product descriptions from CSV files. It preserves the original columns and supports both cloud and locally hosted AI models.
 
-A daemon/client CLI tool for batch-optimizing product descriptions using AI.
+![PDO desktop overview](docs/screenshot.png)
 
-Import product data from CSV, optimize descriptions with Google Gemini, ZhipuAI, or a local LLM, validate them for accuracy, and export the results — all controlled through a familiar CLI interface.
+## What it does
 
-## Features
+- **Guided CSV workflow:** Preview the file, detect common delimiters and encodings, and map columns before import.
+- **Flexible AI integration:** Connect cloud or locally hosted models. Built-in adapters currently support Google Gemini, ZhipuAI, and OpenAI-compatible servers such as Ollama or LM Studio.
+- **Reviewable results:** Watch progress, inspect original and revised descriptions, pause or resume between products, and export completed rows.
+- **Local project state:** SQLite stores progress after every product so a stopped run can continue with remaining rows.
+- **Desktop and automation:** Use the PySide6 application on Linux or Windows, or the existing CLI and daemon on Linux.
 
-- **Two-step AI optimization** — rewrite descriptions, then validate for false promises and hallucinated features
-- **Multiple backends** — Google Gemini, ZhipuAI (GLM-4), any OpenAI-compatible local server (Ollama, LM Studio, …)
-- **Daemon architecture** — background process handles long-running operations while the CLI stays responsive
-- **Pause / resume / reset** — full control over the pipeline at any time
-- **Crash-resilient** — per-product commits mean you never lose progress
-- **Flexible CSV support** — configurable column mappings and automatic encoding detection (UTF-8, CP1252)
+## Install
 
-## Quick Start
+Download a Linux `.AppImage` or `.deb`, or a Windows `.exe` installer from [GitHub Releases](https://github.com/PaDreyer/product-description-optimizer/releases) once a version is published. The packages contain the desktop application and provider libraries; they do not require a separate Python installation. Linux packages currently require glibc 2.36 or newer, as provided by Debian 12 and Ubuntu 24.04.
+
+To run from source, use Python 3.12 or newer:
 
 ```bash
-# Clone and install
-git clone <repo-url> && cd product_description_optimizer
-python -m venv venv && source venv/bin/activate
-pip install -e '.[gemini,zhipuai,openai,dev]'
+git clone https://github.com/PaDreyer/product-description-optimizer.git
+cd product-description-optimizer
+./scripts/setup-dev.sh
+source venv/bin/activate
+pdo-desktop
+```
 
-# Set your API key (choose one)
-export GEMINI_API_KEY="your-key-here"    # Google Gemini
-# export ZHIPUAI_API_KEY="your-key-here" # ZhipuAI
+On Windows, run `.\scripts\setup-dev.ps1` in PowerShell and activate
+`venv\Scripts\Activate.ps1`.
 
-# Start daemon and run the pipeline
-pdo daemon start --foreground
+Choose a CSV file, mark at least one column as **Description**, select an AI backend, and export the completed rows. API keys entered in the desktop app are saved in `~/.pdo/config.toml`; on Linux the file is created with owner-only permissions. Environment variables `GEMINI_API_KEY` and `ZHIPUAI_API_KEY` also work.
 
-# In another terminal:
+The demo backend changes text to uppercase and is meant only to check the import and export flow. Choose an AI backend for useful descriptions. A local server must already be running and have the model you enter in the app. Cloud providers receive the mapped description and context fields; use a local server when the product data must stay on your computer.
+
+## CLI
+
+The Unix-socket daemon and CLI are available for scripts on Linux. Stop the daemon before opening the desktop app because both use the same local database.
+
+```bash
+python -m pip install -e '.[gemini,zhipuai,openai]'
+pdo daemon start
 pdo import products.csv -m product_id:ProduktID -m description:Beschreibung -m context:Marke
-pdo optimize --watch
-pdo export optimized_output.csv
+pdo optimize --optimizer gemini --watch
+pdo export optimized-products.csv
 ```
 
-→ See the [Getting Started guide](docs/getting_started.md) for a detailed walkthrough.
-
-### Docker
-
-```bash
-docker build -t pdo-daemon .
-docker run -d --name pdo-daemon -v $(pwd):/app/workspace pdo-daemon
-docker exec -it pdo-daemon bash
-# Inside: pdo import /app/workspace/products.csv ...
-```
-
-## Architecture
-
-```
-┌──────────┐    Unix Socket    ┌──────────────┐
-│  CLI     │◄─────────────────►│  Daemon      │
-│  (click) │   JSON messages   │  Server      │
-└──────────┘                   └──────┬───────┘
-                                      │
-                                ┌─────▼─────┐
-                                │  Worker    │
-                                │  (thread)  │
-                                └──┬──┬──┬──┘
-                                   │  │  │
-                          ┌────────┘  │  └────────┐
-                          ▼           ▼            ▼
-                      Importer    Optimizer     Exporter
-                        (CSV→DB) (Gemini/ZhipuAI/Local LLM) (DB→CSV)
-                          │           │            │
-                          └─────┬─────┘────────────┘
-                                ▼
-                            SQLite DB
-```
-
-## Documentation
-
-| Document | Description |
-|----------|-------------|
-| [Getting Started](docs/getting_started.md) | Step-by-step installation and first optimization |
-| [CLI Reference](docs/cli_reference.md) | All commands, flags, and configuration options |
+See [Getting Started](docs/getting_started.md) and the [CLI Reference](docs/cli_reference.md) for the full command set and configuration options.
 
 ## Development
 
 ```bash
-pip install -e '.[gemini,openai,dev]'
-
-make test              # all tests with coverage
-make test-unit         # unit tests only
-make test-integration  # integration tests only
-make lint              # ruff check + format check
-make format            # auto-format
+./scripts/setup-dev.sh
+make lint
+make test
 ```
+
+The tag-triggered [release workflow](.github/workflows/release.yml) builds Linux AppImage and Debian packages in a Docker container and a Windows installer with Inno Setup. It checks the tag against the project version, runs tests, and publishes packages with SHA-256 checksums. See [Release guide](docs/RELEASE.md).
 
 ## License
 
-MIT
+[MIT](LICENSE)

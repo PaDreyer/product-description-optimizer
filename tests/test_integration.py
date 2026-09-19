@@ -9,6 +9,7 @@ Worker takes.
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -35,10 +36,10 @@ MAPPINGS = [
 
 
 @pytest.fixture()
-def db() -> Database:
-    database = Database(":memory:")
-    database.initialize()
-    return database
+def db() -> Iterator[Database]:
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 class TestFullPipeline:

@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import pytest
 
 from pdo.core.db import Database
 
 
 @pytest.fixture()
-def db() -> Database:
+def db() -> Iterator[Database]:
     """Return an initialised in-memory database."""
-    database = Database(":memory:")
-    database.initialize()
-    return database
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 # ── Schema initialisation ────────────────────────────────────────────
@@ -199,6 +201,18 @@ class TestPipelineState:
         db.set_pipeline_state("optimizing")
         state_after = db.get_pipeline_state()
         assert state_after["updated_at"] >= state_before["updated_at"]
+
+    def test_requeue_processing_restores_idle_state(self, db: Database) -> None:
+        db.insert_products(_sample_products(1))
+        product = db.get_next_pending()
+        assert product is not None
+        db.update_product_status(product["id"], "processing")
+        db.set_pipeline_state("optimizing")
+
+        assert db.requeue_processing() == 1
+
+        assert db.get_progress()["pending"] == 1
+        assert db.get_pipeline_state()["stage"] == "idle"
 
 
 # ── Column mappings ──────────────────────────────────────────────────

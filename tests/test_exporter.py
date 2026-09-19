@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -13,10 +14,10 @@ from pdo.core.optimizer import DummyOptimizer, run_optimization
 
 
 @pytest.fixture()
-def db() -> Database:
-    database = Database(":memory:")
-    database.initialize()
-    return database
+def db() -> Iterator[Database]:
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 def _seed_and_optimize(db: Database, count: int = 3) -> None:

@@ -12,6 +12,7 @@ import logging
 import time
 
 from pdo.core.base_llm_optimizer import BaseLLMOptimizer
+from pdo.core.provider_defaults import LOCAL_LLM_MODEL
 
 log = logging.getLogger(__name__)
 
@@ -43,7 +44,7 @@ class LocalLLMOptimizer(BaseLLMOptimizer):
         self,
         *,
         address: str,
-        model: str = "local-model",
+        model: str = LOCAL_LLM_MODEL,
         optimize_temperature: float = 0.4,
         validate_temperature: float = 0.1,
         max_retries: int = 3,

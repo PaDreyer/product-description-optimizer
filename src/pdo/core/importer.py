@@ -8,7 +8,6 @@ are provided at import time and persisted in the database for later stages.
 from __future__ import annotations
 
 import csv
-import io
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -71,62 +70,62 @@ def import_csv(
     if not csv_path.is_file():
         raise ImportDataError(f"CSV file not found: {csv_path}")
 
-    text = _read_file(csv_path, encoding)
-    if not text.strip():
+    if csv_path.stat().st_size == 0:
         raise ImportDataError(f"CSV file is empty: {csv_path}")
+    file_encoding = encoding or _detect_encoding(csv_path)
 
     # --- Validate mappings ------------------------------------------------
     id_cols = [m for m in column_mappings if m.role == "product_id"]
     desc_cols = [m for m in column_mappings if m.role == "description"]
     if not desc_cols:
         raise ImportDataError("At least one column mapping with role 'description' is required.")
-
-    # --- Parse CSV ---------------------------------------------------------
-    reader = csv.DictReader(io.StringIO(text), delimiter=delimiter)
-    headers = reader.fieldnames or []
-    if not headers:
-        raise ImportDataError("CSV has no header row.")
-
-    _validate_columns_exist(column_mappings, headers)
-
-    # --- Persist column mappings ------------------------------------------
-    db.set_column_mappings(
-        [
-            {"role": m.role, "csv_column_name": m.csv_column_name, "display_name": m.display_name}
-            for m in column_mappings
-        ]
-    )
-
-    # --- Set pipeline state -----------------------------------------------
-    db.set_pipeline_state("importing", source_file=str(csv_path))
-
-    # --- Read rows --------------------------------------------------------
     errors: list[str] = []
     batch: list[dict[str, Any]] = []
-    row_num = 0
-
-    for row_num, row in enumerate(reader, start=1):
-        if limit is not None and row_num > limit:
-            row_num -= 1  # don't count the row we didn't process
-            break
-        try:
-            product = _build_product_dict(
-                row_number=row_num,
-                row=row,
-                id_cols=id_cols,
-                desc_cols=desc_cols,
-                context_mappings=[m for m in column_mappings if m.role == "context"],
-            )
-            batch.append(product)
-        except Exception as exc:
-            errors.append(f"Row {row_num}: {exc}")
-
-    # --- Bulk insert ------------------------------------------------------
     imported = 0
-    if batch:
-        imported = db.insert_products(batch)
+    total = 0
+    context_mappings = [m for m in column_mappings if m.role == "context"]
 
-    total = row_num
+    with csv_path.open(encoding=file_encoding, newline="") as stream:
+        reader = csv.DictReader(stream, delimiter=delimiter)
+        headers = reader.fieldnames or []
+        if not headers:
+            raise ImportDataError("CSV has no header row.")
+        _validate_columns_exist(column_mappings, headers)
+
+        db.set_column_mappings(
+            [
+                {
+                    "role": m.role,
+                    "csv_column_name": m.csv_column_name,
+                    "display_name": m.display_name,
+                }
+                for m in column_mappings
+            ]
+        )
+        db.set_pipeline_state("importing", source_file=str(csv_path))
+
+        for row_number, row in enumerate(reader, start=1):
+            if limit is not None and row_number > limit:
+                break
+            total = row_number
+            try:
+                batch.append(
+                    _build_product_dict(
+                        row_number=row_number,
+                        row=row,
+                        id_cols=id_cols,
+                        desc_cols=desc_cols,
+                        context_mappings=context_mappings,
+                    )
+                )
+            except Exception as exc:
+                errors.append(f"Row {row_number}: {exc}")
+            if len(batch) >= 500:
+                imported += db.insert_products(batch)
+                batch.clear()
+
+    if batch:
+        imported += db.insert_products(batch)
     skipped = total - imported
 
     db.set_pipeline_state(
@@ -146,15 +145,15 @@ def import_csv(
 # ── Private helpers ──────────────────────────────────────────────────────
 
 
-def _read_file(path: Path, encoding: str | None) -> str:
-    """Read the file, trying UTF-8 first then CP1252 if no encoding given."""
-    if encoding:
-        return path.read_text(encoding=encoding)
-
+def _detect_encoding(path: Path) -> str:
+    """Validate UTF-8 in bounded chunks, falling back to CP1252."""
     try:
-        return path.read_text(encoding="utf-8")
+        with path.open(encoding="utf-8-sig") as stream:
+            while stream.read(64 * 1024):
+                pass
     except UnicodeDecodeError:
-        return path.read_text(encoding="cp1252")
+        return "cp1252"
+    return "utf-8-sig"
 
 
 def _validate_columns_exist(

@@ -13,14 +13,17 @@ import selectors
 import signal
 import socket
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from pdo import __version__
 from pdo.config import PdoConfig, load_config
 from pdo.core.db import Database
+from pdo.core.instance_lock import InstanceLock
 from pdo.daemon.pid import is_daemon_running, remove_pid, write_pid
 from pdo.daemon.worker import Worker
+from pdo.exceptions import InstanceAlreadyRunningError
 from pdo.protocol.messages import (
     Request,
     Response,
@@ -43,27 +46,40 @@ class DaemonServer:
         self._running = False
         self._server_sock: socket.socket | None = None
         self._sel: selectors.DefaultSelector | None = None
+        self._instance_lock = InstanceLock(self._config.data_dir / "pdo.lock")
+        self._pid_written = False
+        self._socket_bound = False
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
-    def start(self, *, foreground: bool = False) -> None:
+    def start(
+        self,
+        *,
+        foreground: bool = False,
+        on_starting: Callable[[], None] | None = None,
+    ) -> None:
         """Start the daemon.
 
         Args:
             foreground: If *True*, run in the current process (for debugging).
                 Otherwise fork into the background.
+            on_starting: Optional callback invoked after exclusive access has
+                been acquired and before the daemon enters the foreground or
+                forks into the background.
         """
         if is_daemon_running(self._pid_path):
-            log.error("Daemon is already running")
-            sys.exit(1)
+            raise InstanceAlreadyRunningError("Daemon is already running.")
+
+        self._instance_lock.acquire()
+        if on_starting is not None:
+            on_starting()
 
         if not foreground:
             _daemonize()
 
-        self._setup()
-        log.info("Daemon started (pid=%d, socket=%s)", os.getpid(), self._socket_path)
-
         try:
+            self._setup()
+            log.info("Daemon started (pid=%d, socket=%s)", os.getpid(), self._socket_path)
             self._serve()
         except KeyboardInterrupt:
             log.info("Received keyboard interrupt")
@@ -85,11 +101,18 @@ class DaemonServer:
             self._server_sock.close()
 
         # Remove socket file
-        self._socket_path.unlink(missing_ok=True)
-        remove_pid(self._pid_path)
+        if self._socket_bound:
+            self._socket_path.unlink(missing_ok=True)
+            self._socket_bound = False
+        if self._pid_written:
+            remove_pid(self._pid_path)
+            self._pid_written = False
 
         if self._db:
             self._db.close()
+            self._db = None
+
+        self._instance_lock.release()
 
         log.info("Daemon stopped")
 
@@ -106,20 +129,19 @@ class DaemonServer:
         logging.basicConfig(
             level=logging.INFO,
             format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            handlers=[
-                logging.FileHandler(log_file),
-                logging.StreamHandler(sys.stdout)
-            ],
-            force=True
+            handlers=[logging.FileHandler(log_file), logging.StreamHandler(sys.stdout)],
+            force=True,
         )
 
         # Write PID
         write_pid(self._pid_path)
+        self._pid_written = True
 
         # Database
         db_path = self._config.data_dir / "pdo.db"
         self._db = Database(db_path)
         self._db.initialize()
+        self._db.requeue_processing()
 
         # Worker
         self._worker = Worker(self._db, self._config)
@@ -129,6 +151,7 @@ class DaemonServer:
         self._server_sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
         self._server_sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._server_sock.bind(str(self._socket_path))
+        self._socket_bound = True
         self._server_sock.listen(5)
         self._server_sock.setblocking(False)
 

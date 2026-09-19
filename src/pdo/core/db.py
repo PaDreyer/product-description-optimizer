@@ -155,6 +155,56 @@ class Database:
             rows = self._conn.execute("SELECT * FROM products ORDER BY id").fetchall()
         return [_row_to_dict(r) for r in rows]
 
+    def get_product_preview(self, limit: int = 100) -> list[dict[str, Any]]:
+        """Return a bounded sample of products for desktop display.
+
+        Args:
+            limit: Maximum number of rows to return.
+
+        Returns:
+            Product records ordered by import order.
+        """
+        rows = self._conn.execute(
+            "SELECT id, product_id_value, original_description, optimized_description, "
+            "status, error_message FROM products ORDER BY id LIMIT ?",
+            (max(0, limit),),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    def requeue_processing(self) -> int:
+        """Return interrupted work to a consistent idle state at startup.
+
+        Returns:
+            Number of recovered product rows.
+        """
+        with self._conn:
+            cursor = self._conn.execute(
+                "UPDATE products SET status = 'pending', updated_at = CURRENT_TIMESTAMP "
+                "WHERE status = 'processing'"
+            )
+            self._conn.execute(
+                "UPDATE pipeline_state SET stage = 'idle', "
+                "updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now') "
+                "WHERE id = 1 AND stage IN ('importing', 'optimizing', 'exporting')"
+            )
+        return cursor.rowcount
+
+    def replace_from(self, source_path: Path | str) -> None:
+        """Atomically replace all database contents from another SQLite file.
+
+        This is used by the desktop importer after a CSV has been fully
+        validated and imported into a staging database. The current batch is
+        therefore preserved if reading or validating the new file fails.
+
+        Args:
+            source_path: Initialised SQLite database to copy from.
+        """
+        source = sqlite3.connect(str(source_path))
+        try:
+            source.backup(self._conn)
+        finally:
+            source.close()
+
     # ── Pipeline state ───────────────────────────────────────────────
 
     def get_pipeline_state(self) -> dict[str, Any]:
@@ -214,7 +264,7 @@ class Database:
 
     def reset(self, keep: bool = False) -> None:
         """Drop all data and reinitialize the schema.
-        
+
         If keep is True, retain products and mappings but flag all products as pending
         and reset pipeline state metrics.
         """
@@ -222,12 +272,12 @@ class Database:
             if keep:
                 self._conn.executescript(
                     """
-                    UPDATE products 
-                       SET status = 'pending', 
-                           optimized_description = NULL, 
+                    UPDATE products
+                       SET status = 'pending',
+                           optimized_description = NULL,
                            error_message = NULL;
-                    UPDATE pipeline_state 
-                       SET stage = 'idle', 
+                    UPDATE pipeline_state
+                       SET stage = 'idle',
                            processed_count = 0;
                     """
                 )

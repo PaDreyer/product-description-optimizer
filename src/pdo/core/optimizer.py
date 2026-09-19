@@ -11,6 +11,7 @@ progress survives crashes.
 from __future__ import annotations
 
 import threading
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -110,8 +111,12 @@ def run_optimization(
             break
 
         # ── Check pause (blocking wait) ──────────────────────────
-        if pause_event and pause_event.is_set():
-            pause_event.wait()  # blocks until cleared
+        while pause_event and pause_event.is_set():
+            if stop_event and stop_event.is_set():
+                break
+            time.sleep(0.1)
+        if stop_event and stop_event.is_set():
+            break
 
         # ── Process one product ──────────────────────────────────
         db.update_product_status(product["id"], "processing")

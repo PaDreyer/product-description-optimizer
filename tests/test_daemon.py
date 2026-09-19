@@ -7,6 +7,7 @@ import socket
 import tempfile
 import threading
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +15,7 @@ import pytest
 
 from pdo.config import PdoConfig
 from pdo.core.db import Database
+from pdo.core.importer import ImportResult
 from pdo.daemon.pid import is_daemon_running, read_pid, remove_pid, write_pid
 from pdo.daemon.worker import Worker
 from pdo.protocol.messages import Request, Response, receive_message, send_message
@@ -65,10 +67,10 @@ class TestPidManagement:
 
 
 @pytest.fixture()
-def db() -> Database:
-    database = Database(":memory:")
-    database.initialize()
-    return database
+def db() -> Iterator[Database]:
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 def _seed_products(db: Database, count: int = 3) -> None:
@@ -133,6 +135,29 @@ class TestWorker:
         worker.resume()
         time.sleep(0.5)
         worker.stop(timeout=2.0)
+
+    def test_staged_import_reports_importing_while_busy(self, db: Database, tmp_path: Path) -> None:
+        started = threading.Event()
+        release = threading.Event()
+
+        def slow_import(*args, **kwargs) -> ImportResult:
+            started.set()
+            assert release.wait(timeout=2.0)
+            return ImportResult(total_rows=1, imported_count=1)
+
+        worker = Worker(db, PdoConfig())
+        with patch("pdo.daemon.worker.import_csv", side_effect=slow_import):
+            assert worker.start_import(
+                tmp_path / "unused.csv",
+                [{"role": "description", "csv_column_name": "Description"}],
+                replace_existing=True,
+            )
+            assert started.wait(timeout=2.0)
+            status = worker.get_status()
+            assert status["busy"] is True
+            assert status["stage"] == "importing"
+            release.set()
+            worker.stop(timeout=2.0)
 
 
 # ── Server dispatch (unit-level) ─────────────────────────────────────
@@ -253,9 +278,7 @@ class TestServerDispatch:
         daemon._worker = Worker(db, config)
 
         with patch.object(daemon._worker, "start_optimization", return_value=True) as mock_start:
-            resp = daemon._dispatch(
-                Request(action="optimize", payload={"optimizer": "dummy"})
-            )
+            resp = daemon._dispatch(Request(action="optimize", payload={"optimizer": "dummy"}))
 
         assert resp.success is True
         mock_start.assert_called_once_with(optimizer_name="dummy")

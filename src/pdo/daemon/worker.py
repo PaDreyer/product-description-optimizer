@@ -7,6 +7,7 @@ signalling, and ensures only one operation runs at a time.
 from __future__ import annotations
 
 import logging
+import tempfile
 import threading
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from pdo.core.exporter import export_csv
 from pdo.core.importer import ColumnMapping, import_csv
 from pdo.core.optimizer import Optimizer, run_optimization
 from pdo.core.registry import create_optimizer, get_default_optimizer_name
+from pdo.exceptions import ImportDataError
 
 log = logging.getLogger(__name__)
 
@@ -35,6 +37,7 @@ class Worker:
         self._stop_event = threading.Event()
         self._lock = threading.Lock()
         self._last_result: dict[str, Any] = {}
+        self._active_stage: str | None = None
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -50,10 +53,20 @@ class Worker:
         *,
         delimiter: str = ";",
         limit: int | None = None,
+        replace_existing: bool = False,
     ) -> bool:
         """Run the CSV importer in a worker thread.
 
-        Returns *True* if started, *False* if already busy.
+        Args:
+            csv_path: Source CSV file.
+            column_mappings: Semantic mapping for source columns.
+            delimiter: CSV field delimiter.
+            limit: Optional maximum number of source rows.
+            replace_existing: Import into a temporary database and replace the
+                active batch only after the complete import succeeds.
+
+        Returns:
+            *True* if started, *False* if already busy.
         """
         if self.is_busy:
             return False
@@ -69,13 +82,33 @@ class Worker:
 
         def _run() -> None:
             try:
-                result = import_csv(
-                    self._db,
-                    csv_path,
-                    column_mappings=mappings,
-                    delimiter=delimiter,
-                    limit=limit,
-                )
+                if replace_existing:
+                    with tempfile.TemporaryDirectory(prefix="pdo-import-") as temp_dir:
+                        staging_path = Path(temp_dir) / "staging.db"
+                        with Database(staging_path) as staging_db:
+                            staging_db.initialize()
+                            result = import_csv(
+                                staging_db,
+                                csv_path,
+                                column_mappings=mappings,
+                                delimiter=delimiter,
+                                limit=limit,
+                            )
+                        if result.imported_count == 0:
+                            detail = f" First error: {result.errors[0]}" if result.errors else ""
+                            raise ImportDataError(
+                                "No product rows were imported; the current batch was kept."
+                                + detail
+                            )
+                        self._db.replace_from(staging_path)
+                else:
+                    result = import_csv(
+                        self._db,
+                        csv_path,
+                        column_mappings=mappings,
+                        delimiter=delimiter,
+                        limit=limit,
+                    )
                 self._last_result = {
                     "total_rows": result.total_rows,
                     "imported_count": result.imported_count,
@@ -83,8 +116,10 @@ class Worker:
                     "errors": result.errors,
                 }
                 log.info("Import complete: %s", self._last_result)
-            except Exception:
+            except Exception as exc:
                 log.exception("Import failed")
+                self._last_result = {"error": str(exc)}
+                self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "import")
 
@@ -124,8 +159,10 @@ class Worker:
                     "skipped": result.skipped,
                 }
                 log.info("Optimization complete: %s", self._last_result)
-            except Exception:
+            except Exception as exc:
                 log.exception("Optimization failed")
+                self._last_result = {"error": str(exc)}
+                self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "optimize")
 
@@ -164,8 +201,10 @@ class Worker:
                     "output_path": str(result.output_path),
                 }
                 log.info("Export complete: %s", self._last_result)
-            except Exception:
+            except Exception as exc:
                 log.exception("Export failed")
+                self._last_result = {"error": str(exc)}
+                self._db.set_pipeline_state("idle")
 
         return self._start_thread(_run, "export")
 
@@ -198,10 +237,13 @@ class Worker:
         """Return a status snapshot."""
         progress = self._db.get_progress()
         pipeline = self._db.get_pipeline_state()
+        busy = self.is_busy
         return {
-            "busy": self.is_busy,
+            "busy": busy,
             "paused": self._pause_event.is_set(),
-            "stage": pipeline.get("stage", "idle"),
+            "stage": self._active_stage
+            if busy and self._active_stage
+            else pipeline.get("stage", "idle"),
             "progress": progress,
             "last_result": self._last_result,
         }
@@ -210,10 +252,24 @@ class Worker:
 
     def _start_thread(self, target: Any, name: str) -> bool:
         """Start a daemon thread for the given target function."""
+        stages = {"import": "importing", "optimize": "optimizing", "export": "exporting"}
+
+        def _run_target() -> None:
+            try:
+                target()
+            finally:
+                self._active_stage = None
+
         with self._lock:
             if self.is_busy:
                 return False
             self._stop_event.clear()
-            self._thread = threading.Thread(target=target, name=f"pdo-{name}", daemon=True)
+            self._last_result = {}
+            self._active_stage = stages[name]
+            self._thread = threading.Thread(
+                target=_run_target,
+                name=f"pdo-{name}",
+                daemon=True,
+            )
             self._thread.start()
         return True

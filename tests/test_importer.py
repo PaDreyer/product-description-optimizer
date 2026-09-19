@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -12,10 +13,10 @@ from pdo.exceptions import ImportDataError
 
 
 @pytest.fixture()
-def db() -> Database:
-    database = Database(":memory:")
-    database.initialize()
-    return database
+def db() -> Iterator[Database]:
+    with Database(":memory:") as database:
+        database.initialize()
+        yield database
 
 
 def _write_csv(path: Path, content: str) -> Path:
@@ -135,6 +136,23 @@ class TestImportErrors:
 
 
 class TestImportSpecialCases:
+    def test_utf8_bom_header(self, db: Database, tmp_path: Path) -> None:
+        csv_file = _write_csv(
+            tmp_path / "bom.csv", '\ufeff"ProduktID";"Beschreibung"\n"P001";"Text"\n'
+        )
+        mappings = [ColumnMapping(role="description", csv_column_name="Beschreibung")]
+        result = import_csv(db, csv_file, column_mappings=mappings)
+        assert result.imported_count == 1
+        assert db.get_all_products()[0]["original_description"] == "Text"
+
+    def test_imports_multiple_batches(self, db: Database, tmp_path: Path) -> None:
+        lines = ["ProduktID;Beschreibung"] + [f"P{i:04};Text {i}" for i in range(1001)]
+        csv_file = _write_csv(tmp_path / "large.csv", "\n".join(lines) + "\n")
+        mappings = [ColumnMapping(role="description", csv_column_name="Beschreibung")]
+        result = import_csv(db, csv_file, column_mappings=mappings)
+        assert result.imported_count == 1001
+        assert db.get_progress()["total"] == 1001
+
     def test_unicode_content(self, db: Database, tmp_path: Path) -> None:
         csv_content = (
             '"ProduktID";"Beschreibung"\n'

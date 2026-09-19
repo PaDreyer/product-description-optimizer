@@ -10,7 +10,7 @@ from typing import Any
 import click
 
 from pdo.cli.common import global_options
-from pdo.config import PdoConfig
+from pdo.config import PdoConfig, save_config_values
 from pdo.exceptions import ConfigError
 
 
@@ -53,33 +53,6 @@ def _load_config_dict(path: Path) -> dict[str, str]:
     except OSError as e:
         raise ConfigError(f"Failed to read config file at {path}: {e}") from e
 
-    pdo_section = data.get("pdo", {})
-    if not isinstance(pdo_section, dict):
-        raise ConfigError(f"Invalid config format in {path}: [pdo] section must be a dictionary.")
-
-    return {k: str(v) for k, v in pdo_section.items()}
-
-
-def _save_config_dict(path: Path, items: dict[str, str]) -> None:
-    """Save the dictionary to the config file under the [pdo] section."""
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        lines = ["[pdo]"]
-
-        # Sort keys for consistent output
-        for k in sorted(items.keys()):
-            v = items[k]
-            # Quote key if it contains a dot to prevent TOML from creating nested structures
-            key_name = f'"{k}"' if "." in k else k
-            # Basic escaping for string values
-            escaped_v = v.replace("\\", "\\\\").replace('"', '\\"')
-            lines.append(f'{key_name} = "{escaped_v}"')
-
-        with path.open("w", encoding="utf-8") as fh:
-            fh.write("\n".join(lines) + "\n")
-    except OSError as e:
-        raise ConfigError(f"Failed to write config file at {path}: {e}") from e
-
 
 @click.group()
 def config() -> None:
@@ -98,9 +71,7 @@ def set_cmd(ctx: click.Context, key: str, value: str) -> None:
     """
     path = ctx.obj.config_path or PdoConfig().config_file_path
     try:
-        data = _load_config_dict(path)
-        data[key] = value
-        _save_config_dict(path, data)
+        save_config_values(path, {key: value})
         ctx.obj.out.result(
             success=True,
             key=key,

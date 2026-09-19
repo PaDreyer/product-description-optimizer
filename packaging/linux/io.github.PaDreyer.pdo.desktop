@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Product Description Optimizer
+GenericName=CSV product description editor
+Comment=Improve product descriptions and export the results
+Exec=pdo-desktop
+Icon=pdo
+Terminal=false
+Categories=Office;
+StartupNotify=true

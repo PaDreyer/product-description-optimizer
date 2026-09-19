@@ -1,0 +1,2 @@
+-e .[dev,desktop,gemini,zhipuai,openai]
+pyinstaller>=6,<7

@@ -1,5 +1,8 @@
 .PHONY: test lint test-unit test-integration format docker-build docker-run docker-shell docker-clean
 
+PYTHON ?= venv/bin/python
+RUFF ?= venv/bin/ruff
+
 docker-build:
 	docker build -t pdo-daemon .
 
@@ -13,17 +16,17 @@ docker-clean:
 	docker rm -f pdo-daemon
 
 test-unit:
-	python -m pytest tests/ -v --ignore=tests/test_integration.py
+	$(PYTHON) -m pytest tests/ -v --ignore=tests/test_integration.py
 
 test-integration:
-	python -m pytest tests/test_integration.py -v
+	$(PYTHON) -m pytest tests/test_integration.py -v
 
 test:
-	python -m pytest tests/ -v --cov=src/pdo --cov-report=term-missing
+	$(PYTHON) -m pytest tests/ -v --cov=src/pdo --cov-report=term-missing
 
 lint:
-	ruff check src/ tests/
-	ruff format --check src/ tests/
+	$(RUFF) check src/ tests/
+	$(RUFF) format --check src/ tests/
 
 format:
-	ruff format src/ tests/
+	$(RUFF) format src/ tests/

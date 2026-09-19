@@ -2,9 +2,11 @@
 
 Complete reference for all `pdo` commands. Every command supports `--help` for inline usage.
 
+The CLI daemon uses Unix sockets and is supported on Linux. Use `pdo-desktop` on Windows.
+
 ## Global Options
 
-These flags work with any command:
+Place these flags before the command name. `--json` and `--verbose` can also be placed after a command that exposes them.
 
 | Flag | Description |
 |------|-------------|
@@ -56,7 +58,7 @@ Import a CSV file into the database.
 
 | Role | Required | Description |
 |------|----------|-------------|
-| `product_id` | Yes | Unique product identifier |
+| `product_id` | No | Product identifier when present |
 | `description` | Yes | The description text to optimize |
 | `context` | No | Extra info for the AI (brand, title, specs, etc.) — repeatable |
 
@@ -204,6 +206,7 @@ pdo config set style_instructions "Start with the product, then benefits, end wi
 | Config key | Default | Description |
 |------------|---------|-------------|
 | `gemini.api_key` | — | API key (alternative to `GEMINI_API_KEY` env var) |
+| `gemini.model` | `gemini-3.6-flash` | Model identifier |
 
 **ZhipuAI:**
 
@@ -234,3 +237,5 @@ validate_temperature = "0.1"
 ```
 
 Manage via `pdo config set / get / list` — no manual editing required.
+
+The desktop app writes the same keys when settings are saved in its optimizer screen. Cloud providers receive the mapped product description and context fields. An OpenAI-compatible local server keeps those requests on the configured local endpoint.

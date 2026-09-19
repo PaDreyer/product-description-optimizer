@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.PaDreyer.pdo</id>
+  <name>Product Description Optimizer</name>
+  <summary>AI-powered product description optimization from CSV files</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+  <developer_name>PaDreyer</developer_name>
+  <url type="homepage">https://github.com/PaDreyer/product-description-optimizer</url>
+  <url type="bugtracker">https://github.com/PaDreyer/product-description-optimizer/issues</url>
+  <description>
+    <p>Import product data from CSV, improve descriptions with cloud or locally hosted AI models, review the results, and export the completed rows.</p>
+  </description>
+  <launchable type="desktop-id">io.github.PaDreyer.pdo.desktop</launchable>
+  <provides>
+    <binary>PDO</binary>
+  </provides>
+  <content_rating type="oars-1.1" />
+</component>

@@ -9,11 +9,15 @@ Priority (highest → lowest):
 
 from __future__ import annotations
 
+import json
 import os
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from pdo.exceptions import ConfigError
 
 _DEFAULT_BASE_DIR = Path.home() / ".pdo"
 
@@ -30,19 +34,36 @@ class PdoConfig:
     options: dict[str, str] = field(default_factory=dict)
 
 
-def _read_config_file(path: Path) -> dict[str, str]:
+def _read_config_file(path: Path, *, strict: bool = False) -> dict[str, str]:
     """Read and return the TOML config file as a flat dict.
 
     Flattens nested structures (from unquoted dot keys) to dot-separated strings.
 
-    Returns an empty dict if the file does not exist or is malformed.
+    Args:
+        path: Configuration file to read.
+        strict: Raise :class:`ConfigError` for invalid or unreadable files.
+
+    Returns:
+        Flattened values from the ``[pdo]`` section. Missing files return an
+        empty dictionary.
+
+    Raises:
+        ConfigError: If strict mode is enabled and the file cannot be read.
     """
+    if not path.exists():
+        return {}
     if not path.is_file():
+        if strict:
+            raise ConfigError(f"Config path {path} exists but is not a file.")
         return {}
     try:
         with path.open("rb") as fh:
             data = tomllib.load(fh)
         pdo_section = data.get("pdo", {})
+        if not isinstance(pdo_section, dict):
+            raise ConfigError(
+                f"Invalid config format in {path}: [pdo] section must be a dictionary."
+            )
 
         # Flatten nested structures to dot-separated keys
         def flatten_dict(d: dict[str, Any], parent_key: str = "") -> dict[str, str]:
@@ -57,7 +78,13 @@ def _read_config_file(path: Path) -> dict[str, str]:
             return result
 
         return flatten_dict(pdo_section)
-    except (tomllib.TOMLDecodeError, OSError):
+    except ConfigError:
+        if strict:
+            raise
+        return {}
+    except (tomllib.TOMLDecodeError, OSError) as exc:
+        if strict:
+            raise ConfigError(f"Failed to read config file at {path}: {exc}") from exc
         return {}
 
 
@@ -110,3 +137,39 @@ def load_config(
         optimizer=merged.pop("optimizer", defaults.optimizer),
         options=merged,
     )
+
+
+def save_config_values(path: Path, values: dict[str, str]) -> None:
+    """Merge and atomically save application settings.
+
+    Args:
+        path: TOML configuration path.
+        values: Flat setting names and string values to update.
+
+    Raises:
+        ConfigError: If the existing configuration is invalid or the updated
+            file cannot be written.
+    """
+    merged = _read_config_file(path, strict=True)
+    merged.update(values)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = ["[pdo]"]
+    for key, value in sorted(merged.items()):
+        toml_key = json.dumps(key, ensure_ascii=False)
+        toml_value = json.dumps(value, ensure_ascii=False)
+        lines.append(f"{toml_key} = {toml_value}")
+    temp_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=".config-", delete=False
+        ) as stream:
+            temp_path = Path(stream.name)
+            stream.write("\n".join(lines) + "\n")
+        if os.name != "nt":
+            temp_path.chmod(0o600)
+        temp_path.replace(path)
+    except OSError as exc:
+        raise ConfigError(f"Failed to write config file at {path}: {exc}") from exc
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)

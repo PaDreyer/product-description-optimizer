@@ -19,6 +19,7 @@ venv/
 # Coverage
 .coverage
 htmlcov/
+session-ses_*.md
 
 # Linting
 .ruff_cache/
@@ -29,6 +30,7 @@ htmlcov/
 # PDO data (daemon runtime state)
 *.db
 *.pid
+*.lock
 *.sock
 
 # OS

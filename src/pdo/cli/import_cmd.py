@@ -17,7 +17,7 @@ from pdo.cli.common import global_options, run_with_spinner
     multiple=True,
     help=(
         "Column mapping in ROLE:COLUMN format, e.g. "
-        "-m description:Beschreibung -m product_id:ProduktID -m context:Marke"
+        "-m description:Description -m product_id:ProductID -m context:Brand"
     ),
 )
 @click.option("--delimiter", "-d", default=";", help="CSV delimiter (default: ;).")
@@ -34,13 +34,13 @@ def import_cmd(
 
     Example:
 
-        pdo import products.csv -m product_id:ProduktID -m description:Beschreibung
+        pdo import products.csv -m product_id:ProductID -m description:Description
     """
     from pdo.cli.client import send_command
     from pdo.exceptions import DaemonNotRunningError
 
     if not mapping:
-        err = "At least one --mapping is required (e.g. -m description:Beschreibung)"
+        err = "At least one --mapping is required (e.g. -m description:Description)"
         ctx.obj.out.result(success=False, error=err)
         raise SystemExit(1)
 

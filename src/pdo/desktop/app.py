@@ -206,18 +206,16 @@ class DesktopWindow(QMainWindow):
         brand.setWordWrap(False)
         chrome.addWidget(brand)
         chrome.addStretch()
-        self.source_label = _label("Neuer Durchlauf", "muted")
+        self.source_label = _label("New batch", "muted")
         self.source_label.setWordWrap(False)
         self.source_label.setMaximumWidth(320)
         chrome.addWidget(self.source_label)
-        self.settings_button = button("Einstellungen", self._open_settings)
+        self.settings_button = button("Settings", self._open_settings)
         chrome.addWidget(self.settings_button)
         outer.addLayout(chrome)
         steps = QHBoxLayout()
         self.nav_buttons = []
-        for index, text in enumerate(
-            ("1  Daten laden", "2  Optimieren", "3  Prüfen && exportieren")
-        ):
+        for index, text in enumerate(("1  Import data", "2  Optimize", "3  Review && export")):
             item = button(text, lambda checked=False, page=index: self._show_page(page))
             item.setObjectName("step")
             item.setCheckable(True)
@@ -246,7 +244,7 @@ class DesktopWindow(QMainWindow):
                 frame_layout.addLayout(self._page_actions[page])
             self.pages.addWidget(frame)
         outer.addWidget(self.pages, 1)
-        self.daemon_label = _label("Verbindung wird hergestellt …", "muted")
+        self.daemon_label = _label("Connecting …", "muted")
         outer.addWidget(self.daemon_label)
         self._backend_changed()
         self._load_settings()
@@ -269,19 +267,19 @@ class DesktopWindow(QMainWindow):
 
     def _build_import(self) -> QWidget:
         page, layout = self._page(
-            "Produktbeschreibungen importieren",
-            "CSV laden, die vorgeschlagene Spaltenzuordnung prüfen und fortfahren.",
+            "Import product descriptions",
+            "Load a CSV, review the suggested column mapping, and continue.",
         )
         self.import_intro, intro = _card()
         self.import_intro.setObjectName("drop")
         self.import_intro.setMinimumHeight(240)
         intro.addStretch()
-        intro_title = _label("Mit deiner Produktdatei beginnen", "headline")
+        intro_title = _label("Start with your product file", "headline")
         intro_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         intro.addWidget(intro_title)
-        self.browse_button = button("CSV auswählen", self._choose_source, True)
+        self.browse_button = button("Select CSV", self._choose_source, True)
         intro.addWidget(self.browse_button, alignment=Qt.AlignmentFlag.AlignCenter)
-        intro_note = _label("Trennzeichen und Spalten werden automatisch erkannt.", "muted")
+        intro_note = _label("The delimiter and columns are detected automatically.", "muted")
         intro_note.setAlignment(Qt.AlignmentFlag.AlignCenter)
         intro.addWidget(intro_note)
         intro.addStretch()
@@ -293,12 +291,12 @@ class DesktopWindow(QMainWindow):
         row = QHBoxLayout()
         self.file_label = _label("", "muted")
         row.addWidget(self.file_label, 1)
-        self.change_source_button = button("Andere CSV auswählen", self._choose_source)
+        self.change_source_button = button("Select another CSV", self._choose_source)
         row.addWidget(self.change_source_button)
         mapping.addLayout(row)
-        self.format_label = _label("Trennzeichen und Zeichenkodierung werden erkannt.", "muted")
+        self.format_label = _label("The delimiter and character encoding are detected.", "muted")
         mapping.addWidget(self.format_label)
-        self.sample_table = _table(["Spalte", "Beispiel aus der Datei", "Verwendung"])
+        self.sample_table = _table(["Column", "Example from file", "Use"])
         self.sample_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.sample_table.setColumnWidth(0, 170)
         self.sample_table.setColumnWidth(2, 260)
@@ -306,15 +304,15 @@ class DesktopWindow(QMainWindow):
         mapping.addWidget(self.sample_table, 1)
         mapping.addWidget(
             _label(
-                "Nur Beschreibungen und Zusatzinfos gehen an die KI. "
-                "Alle Originalspalten bleiben erhalten.",
+                "Only descriptions and context fields are sent to the AI. "
+                "All original columns are retained.",
                 "muted",
             )
         )
         layout.addWidget(self.mapping_panel)
         self.mapping_panel.hide()
         layout.addStretch()
-        self.import_button = button("Weiter zur Optimierung", self._start_import, True)
+        self.import_button = button("Continue to optimization", self._start_import, True)
         actions = QHBoxLayout()
         actions.addStretch()
         actions.addWidget(self.import_button)
@@ -322,9 +320,7 @@ class DesktopWindow(QMainWindow):
         return page
 
     def _build_optimizer(self) -> QWidget:
-        page, layout = self._page(
-            "Optimierung", "Deine Einstellungen und der aktuelle Fortschritt."
-        )
+        page, layout = self._page("Optimization", "Your settings and current progress.")
         self.setup_panel = QWidget()
         setup = QVBoxLayout(self.setup_panel)
         setup.setContentsMargins(0, 0, 0, 0)
@@ -332,32 +328,32 @@ class DesktopWindow(QMainWindow):
         row = QHBoxLayout()
         self.provider_label = _label("")
         row.addWidget(self.provider_label, 1)
-        row.addWidget(button("Ändern", self._open_settings))
+        row.addWidget(button("Change", self._open_settings))
         provider.addLayout(row)
         self.provider_state = _label("", "muted")
         provider.addWidget(self.provider_state)
         self.data_flow_label = _label("", "muted")
         provider.addWidget(self.data_flow_label)
         setup.addWidget(card)
-        self.style_label = _label("Wie sollen die Texte klingen? · Optional")
+        self.style_label = _label("How should the text sound? · Optional")
         setup.addWidget(self.style_label)
         self.style_input = QPlainTextEdit()
         self.style_input.setPlaceholderText(
-            "Zum Beispiel: sachlich, verständlich, Ansprache mit du."
+            "For example: factual, clear, and written in a conversational tone."
         )
         self.style_input.setMaximumHeight(110)
         setup.addWidget(self.style_input)
-        self.text_options_toggle = button("Weitere Textvorgaben", self._toggle_text_options)
+        self.text_options_toggle = button("More text options", self._toggle_text_options)
         setup.addWidget(self.text_options_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         self.text_options = QWidget()
         form = QFormLayout(self.text_options)
         self.sentences = QSpinBox()
         self.sentences.setRange(1, 20)
         self.sentences.setValue(3)
-        form.addRow("Ziellänge in Sätzen", self.sentences)
+        form.addRow("Target length in sentences", self.sentences)
         self.text_options.hide()
         setup.addWidget(self.text_options)
-        self.optimize_button = button("Produkte optimieren", self._start_optimization, True)
+        self.optimize_button = button("Optimize products", self._start_optimization, True)
         actions = QHBoxLayout()
         actions.addStretch()
         actions.addWidget(self.optimize_button)
@@ -370,11 +366,11 @@ class DesktopWindow(QMainWindow):
         run_layout.addWidget(self.progress_bar)
         run_layout.addWidget(
             _label(
-                "Du kannst das Fenster schließen. Die Verarbeitung läuft im Hintergrund weiter.",
+                "You can close this window. Processing continues in the background.",
                 "muted",
             )
         )
-        self.pause_button = button("Pausieren", self._toggle_pause)
+        self.pause_button = button("Pause", self._toggle_pause)
         run_layout.addWidget(self.pause_button, alignment=Qt.AlignmentFlag.AlignRight)
         self.run_panel.hide()
         layout.addWidget(self.run_panel)
@@ -385,9 +381,7 @@ class DesktopWindow(QMainWindow):
         self.text_options.setVisible(self.text_options.isHidden())
 
     def _build_results(self) -> QWidget:
-        page, layout = self._page(
-            "Ergebnisse prüfen", "Texte vergleichen oder Fehler gesammelt bearbeiten."
-        )
+        page, layout = self._page("Review results", "Compare text or handle errors by group.")
         self.results_summary = _label("", "muted")
         layout.addWidget(self.results_summary)
         self.result_tabs = ContentTabs()
@@ -395,22 +389,22 @@ class DesktopWindow(QMainWindow):
         product_layout = QVBoxLayout(products)
         filters = QHBoxLayout()
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Produkt-ID oder Text suchen")
+        self.search_input.setPlaceholderText("Search product ID or text")
         self.search_input.returnPressed.connect(self._search_products)
         filters.addWidget(self.search_input, 1)
         self.status_filter = combo(
             [
-                ("Alle Produkte", None),
-                ("Erfolgreich", "done"),
-                ("Fehlerhaft", "error"),
-                ("Ausstehend", "pending"),
+                ("All products", None),
+                ("Successful", "done"),
+                ("Failed", "error"),
+                ("Pending", "pending"),
             ]
         )
         self.status_filter.currentIndexChanged.connect(self._search_products)
         filters.addWidget(self.status_filter)
-        filters.addWidget(button("Suchen", self._search_products))
+        filters.addWidget(button("Search", self._search_products))
         product_layout.addLayout(filters)
-        self.results_table = _table(["Produkt-ID", "Status", "Original (Vorschau)"])
+        self.results_table = _table(["Product ID", "Status", "Original (preview)"])
         self.results_table.setMinimumHeight(280)
         self.results_table.setMinimumWidth(250)
         self.results_table.setMaximumWidth(290)
@@ -421,11 +415,11 @@ class DesktopWindow(QMainWindow):
         review.setSpacing(20)
         review.addWidget(self.results_table)
         detail_column = QVBoxLayout()
-        self.product_title = _label("Produkt auswählen", "muted")
+        self.product_title = _label("Select a product", "muted")
         detail_column.addWidget(self.product_title)
         paging = QHBoxLayout()
-        self.previous_button = button("Vorherige 100", lambda: self._change_page(-100))
-        self.next_button = button("Nächste 100", lambda: self._change_page(100))
+        self.previous_button = button("Previous 100", lambda: self._change_page(-100))
+        self.next_button = button("Next 100", lambda: self._change_page(100))
         paging.addWidget(self.previous_button)
         self.page_label = _label("", "muted")
         paging.addWidget(self.page_label, 1)
@@ -434,7 +428,7 @@ class DesktopWindow(QMainWindow):
         compare = QHBoxLayout()
         self.original_detail = QPlainTextEdit()
         self.detail = QPlainTextEdit()
-        for title, editor in (("Original", self.original_detail), ("Optimiert", self.detail)):
+        for title, editor in (("Original", self.original_detail), ("Optimized", self.detail)):
             column = QVBoxLayout()
             column.addWidget(_label(title, "muted"))
             editor.setReadOnly(True)
@@ -445,29 +439,29 @@ class DesktopWindow(QMainWindow):
         review.addLayout(detail_column, 1)
         product_layout.addLayout(review, 1)
         product_layout.addLayout(paging)
-        self.result_tabs.addTab(products, "Produkte")
+        self.result_tabs.addTab(products, "Products")
         errors = QWidget()
         error_layout = QVBoxLayout(errors)
         self.no_errors = _label(
-            "Keine offenen Fehler. Deine Ergebnisse sind bereit zum Export.", "success"
+            "No unresolved errors. Your results are ready to export.", "success"
         )
         error_layout.addWidget(self.no_errors)
         error_layout.addWidget(
             _label(
-                "Jede Auswahl umfasst alle Produkte der Fehlergruppe. "
-                "Erfolgreiche Ergebnisse bleiben erhalten.",
+                "Each selection includes every product in the error group. "
+                "Successful results are retained.",
                 "muted",
             )
         )
         actions = QHBoxLayout()
-        self.select_errors = checkbox("Alle wiederholbaren Gruppen auswählen")
+        self.select_errors = checkbox("Select all retryable groups")
         self.select_errors.setChecked(True)
         self.select_errors.clicked.connect(self._select_all_errors)
         actions.addWidget(self.select_errors, 1)
-        self.retry_button = button("Ausgewählte erneut verarbeiten", self._retry_errors, True)
+        self.retry_button = button("Retry selected", self._retry_errors, True)
         actions.addWidget(self.retry_button)
         error_layout.addLayout(actions)
-        self.errors_table = _table(["Fehlerursache", "Produkte", "Nächster Schritt"])
+        self.errors_table = _table(["Error cause", "Products", "Next step"])
         self.errors_table.setColumnWidth(0, 260)
         self.errors_table.setColumnWidth(1, 105)
         self.errors_table.setMinimumHeight(150)
@@ -476,38 +470,34 @@ class DesktopWindow(QMainWindow):
         error_layout.addWidget(self.errors_table, 1)
         corrections = QHBoxLayout()
         self.correction_export_button = button(
-            "Quelldaten zur Korrektur exportieren", lambda: self._open_export("corrections")
+            "Export source data for correction", lambda: self._open_export("corrections")
         )
-        self.correction_import_button = button("Korrigierte CSV einlesen", self._import_corrections)
+        self.correction_import_button = button("Import corrected CSV", self._import_corrections)
         corrections.addWidget(self.correction_export_button)
         corrections.addWidget(self.correction_import_button)
         error_layout.addLayout(corrections)
         self.correction_note = _label("", "muted")
         error_layout.addWidget(self.correction_note)
         error_layout.addStretch(1)
-        self.error_export_button = button(
-            "Alle Fehler exportieren", lambda: self._open_export("errors")
-        )
+        self.error_export_button = button("Export all errors", lambda: self._open_export("errors"))
         self.error_export_button.hide()
         self.result_tabs.currentChanged.connect(
             lambda index: self.error_export_button.setVisible(index == 1)
         )
-        self.result_tabs.addTab(errors, "Fehler")
+        self.result_tabs.addTab(errors, "Errors")
         layout.addWidget(self.result_tabs, 1)
         row = QHBoxLayout()
-        self.new_button = button("Neue CSV", self._new_batch)
+        self.new_button = button("New CSV", self._new_batch)
         row.addWidget(self.new_button)
         row.addWidget(self.error_export_button)
         row.addStretch()
-        self.export_button = button("Weiter zum Export", lambda: self._open_export("done"), True)
+        self.export_button = button("Continue to export", lambda: self._open_export("done"), True)
         row.addWidget(self.export_button)
         self._page_actions[page] = row
         return page
 
     def _build_export(self) -> QWidget:
-        page, layout = self._page(
-            "CSV exportieren", "Eine neue Datei für dein Zielsystem erstellen."
-        )
+        page, layout = self._page("Export CSV", "Create a new file for your target system.")
         self.export_title = layout.itemAt(0).widget()
         self.export_subtitle = layout.itemAt(1).widget()
         self.export_success = _label("", "success")
@@ -523,10 +513,10 @@ class DesktopWindow(QMainWindow):
         layout.addStretch()
         self.export_scope = combo(
             [
-                ("Nur erfolgreiche Produkte", "done"),
-                ("Alle Produkte", "all"),
-                ("Fehlerliste mit Quelldaten", "errors"),
-                ("Quelldaten zur Korrektur", "corrections"),
+                ("Successful products only", "done"),
+                ("All products", "all"),
+                ("Error list with source data", "errors"),
+                ("Source data for correction", "corrections"),
             ]
         )
         self.export_scope.currentIndexChanged.connect(self._refresh_export_preview)
@@ -538,7 +528,7 @@ class DesktopWindow(QMainWindow):
         self.format_editor.changed.connect(self._schedule_preview)
         card_layout.addWidget(self.format_editor)
         body.addWidget(card)
-        body.addWidget(_label("Vorschau · zwei Produkte aus deinen Daten"))
+        body.addWidget(_label("Preview · two products from your data"))
         self.export_preview = QPlainTextEdit()
         self.export_preview.setReadOnly(True)
         self.export_preview.setMinimumHeight(110)
@@ -547,12 +537,12 @@ class DesktopWindow(QMainWindow):
         self.export_error = _label("", "error")
         body.addWidget(self.export_error)
         row = QHBoxLayout()
-        row.addWidget(button("Zurück zu den Ergebnissen", lambda: self._show_page(2)))
+        row.addWidget(button("Back to results", lambda: self._show_page(2)))
         row.addStretch()
-        self.save_button = button("Speichern unter …", self._start_export, True)
+        self.save_button = button("Save as …", self._start_export, True)
         row.addWidget(self.save_button)
         self.prepare_export_button = button(
-            "Weiteren Export vorbereiten",
+            "Prepare another export",
             lambda: self._open_export(self.export_scope.currentData()),
             True,
         )
@@ -566,56 +556,56 @@ class DesktopWindow(QMainWindow):
 
     def _build_settings(self) -> QWidget:
         page, layout = self._page(
-            "KI-Verbindung",
-            "Einmal einrichten. Deine Auswahl wird für weitere Durchläufe gespeichert.",
+            "AI connection",
+            "Set it up once. Your selection is saved for future batches.",
         )
         self.settings_form = QFormLayout()
         form = self.settings_form
         form.setSpacing(16)
         self.backend_box = combo(
             [
-                ("Lokaler KI-Server", "local_llm"),
+                ("Local AI server", "local_llm"),
                 ("Google Gemini", "gemini"),
                 ("ZhipuAI", "zhipuai"),
                 ("OpenAI", "openai"),
-                ("Demo · nur Großschreibung", "dummy"),
+                ("Demo · uppercase only", "dummy"),
             ]
         )
-        form.addRow("Anbieter", self.backend_box)
+        form.addRow("Provider", self.backend_box)
         self.openai_auth_box = combo(
             [
-                ("API-Schlüssel · separate Abrechnung", "api_key"),
-                ("ChatGPT-Abonnement · über Codex", "chatgpt"),
+                ("API key · billed separately", "api_key"),
+                ("ChatGPT subscription · through Codex", "chatgpt"),
             ]
         )
-        form.addRow("Zugang", self.openai_auth_box)
-        self.chatgpt_login_button = button("Mit ChatGPT anmelden …", self._login_chatgpt)
+        form.addRow("Access", self.openai_auth_box)
+        self.chatgpt_login_button = button("Sign in with ChatGPT …", self._login_chatgpt)
         form.addRow(self.chatgpt_login_button)
         self.key_input = QLineEdit()
         self.key_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self.key_input.setPlaceholderText("Gespeicherten Schlüssel behalten / Umgebung verwenden")
-        form.addRow("API-Schlüssel", self.key_input)
+        self.key_input.setPlaceholderText("Keep saved key / use environment variable")
+        form.addRow("API key", self.key_input)
         self.address_input = QLineEdit(LOCAL_LLM_ADDRESS)
-        form.addRow("Serveradresse", self.address_input)
-        self.connection_button = button("Verbindung prüfen", self._check_connection)
+        form.addRow("Server address", self.address_input)
+        self.connection_button = button("Check connection", self._check_connection)
         form.addRow(self.connection_button)
         self.connection_label = _label("", "muted")
         form.addRow(self.connection_label)
         self.model_box = combo([])
-        form.addRow("Modell auswählen", self.model_box)
-        self.manual_model = checkbox("Modell manuell festlegen · Erweitert")
+        form.addRow("Select model", self.model_box)
+        self.manual_model = checkbox("Set model manually · Advanced")
         form.addRow(self.manual_model)
         self.model_input = QLineEdit()
-        self.model_input.setPlaceholderText("Modellkennung des Anbieters")
-        form.addRow("Modellkennung", self.model_input)
+        self.model_input.setPlaceholderText("Provider model identifier")
+        form.addRow("Model identifier", self.model_input)
         self.settings_note = _label("", "muted")
         form.addRow(self.settings_note)
         layout.addLayout(form)
         layout.addStretch()
         row = QHBoxLayout()
-        row.addWidget(button("Abbrechen", self._cancel_settings))
+        row.addWidget(button("Cancel", self._cancel_settings))
         row.addStretch()
-        self.settings_save_button = button("Übernehmen", self._save_settings, True)
+        self.settings_save_button = button("Apply", self._save_settings, True)
         row.addWidget(self.settings_save_button)
         self._page_actions[page] = row
         self.backend_box.currentIndexChanged.connect(self._backend_changed)
@@ -699,7 +689,7 @@ class DesktopWindow(QMainWindow):
         self._model_generation += 1
         self.connection_button.setEnabled(True)
         self.chatgpt_login_button.setEnabled(True)
-        self.connection_label.setText("Verbindung noch nicht geprüft.")
+        self.connection_label.setText("Connection has not been checked yet.")
         self._provider_visibility()
 
     def _key_changed(self) -> None:
@@ -728,9 +718,9 @@ class DesktopWindow(QMainWindow):
             self.model_box.addItem(model)
         self.model_input.setText(model)
         self.connection_label.setText(
-            "Codex CLI erforderlich. Mit ChatGPT anmelden und Modelle laden."
+            "Codex CLI required. Sign in with ChatGPT and load models."
             if subscription
-            else "API-Schlüssel prüfen und verfügbare Modelle laden."
+            else "Check the API key and load available models."
         )
         self._provider_visibility()
 
@@ -746,42 +736,44 @@ class DesktopWindow(QMainWindow):
         if demo:
             self.text_options.hide()
         text = {
-            "local_llm": "Beschreibungen und Zusatzinfos gehen an die angegebene Serveradresse.",
-            "gemini": "Beschreibungen und Zusatzinfos werden an Google Gemini gesendet.",
-            "zhipuai": "Beschreibungen und Zusatzinfos werden an ZhipuAI gesendet.",
-            "openai": (
-                "Beschreibungen und Zusatzinfos werden an OpenAI gesendet. "
-                "Die API wird separat vom ChatGPT-Abonnement nach Nutzung abgerechnet."
+            "local_llm": (
+                "Descriptions and context fields are sent to the specified server address."
             ),
-            "dummy": "Demo verarbeitet auf diesem Computer und schreibt nur Großbuchstaben.",
+            "gemini": "Descriptions and context fields are sent to Google Gemini.",
+            "zhipuai": "Descriptions and context fields are sent to ZhipuAI.",
+            "openai": (
+                "Descriptions and context fields are sent to OpenAI. "
+                "API usage is billed separately from the ChatGPT subscription."
+            ),
+            "dummy": "Demo runs on this computer and produces uppercase text only.",
         }[backend]
         subscription = backend == "openai" and self.openai_auth_box.currentData() == "chatgpt"
         if subscription:
             text = (
-                "Beschreibungen und Zusatzinfos werden über Codex an OpenAI gesendet. "
-                "Es gelten die Modelle und Nutzungslimits deines ChatGPT-Zugangs."
+                "Descriptions and context fields are sent to OpenAI through Codex. "
+                "Your ChatGPT account's models and usage limits apply."
             )
         self.data_flow_label.setText(text)
         self.settings_note.setText(text)
         if backend == "local_llm":
             if self.manual_model.isChecked():
-                self.provider_state.setText("Manuelle Modellkennung aus den Einstellungen")
+                self.provider_state.setText("Manual model identifier from settings")
             elif len(self._models) == 1:
                 self.provider_state.setText(
-                    f"Verbunden · {self._models[0]} · automatisch ausgewählt"
+                    f"Connected · {self._models[0]} · selected automatically"
                 )
             elif len(self._models) > 1:
-                self.provider_state.setText(f"Verbunden · {self.model_box.currentText()}")
+                self.provider_state.setText(f"Connected · {self.model_box.currentText()}")
             else:
-                self.provider_state.setText("Verbindung in den Einstellungen prüfen.")
+                self.provider_state.setText("Check the connection in Settings.")
         elif subscription:
             self.provider_state.setText(
                 f"ChatGPT · {self.model_box.currentText()}"
                 if self.model_box.currentText()
-                else "Mit ChatGPT anmelden und ein Modell auswählen."
+                else "Sign in with ChatGPT and select a model."
             )
         elif demo:
-            self.provider_state.setText("Demo ohne KI")
+            self.provider_state.setText("Demo without AI")
         else:
             configured = self.session.config.options.get(f"{backend}.api_key") or os.environ.get(
                 {
@@ -790,9 +782,7 @@ class DesktopWindow(QMainWindow):
                     "openai": "OPENAI_API_KEY",
                 }[backend]
             )
-            model = (
-                "Manuell gewähltes Modell" if self.manual_model.isChecked() else "Standardmodell"
-            )
+            model = "Manually selected model" if self.manual_model.isChecked() else "Default model"
             if backend == "openai":
                 model = (
                     self.model_input.text().strip()
@@ -800,9 +790,7 @@ class DesktopWindow(QMainWindow):
                     else self.model_box.currentText()
                 )
             self.provider_state.setText(
-                f"Zugang hinterlegt · {model}"
-                if configured
-                else "API-Schlüssel in den Einstellungen hinterlegen."
+                f"Credentials configured · {model}" if configured else "Add an API key in Settings."
             )
 
     def _check_connection(self, *, login: bool = False) -> None:
@@ -819,7 +807,7 @@ class DesktopWindow(QMainWindow):
         self.connection_button.setEnabled(False)
         self.chatgpt_login_button.setEnabled(False)
         self.connection_label.setText(
-            "Anmeldung im Browser abschließen …" if login else "Verbindung wird geprüft …"
+            "Complete sign-in in your browser …" if login else "Checking connection …"
         )
 
         def finished(models: list[str]) -> None:
@@ -833,7 +821,7 @@ class DesktopWindow(QMainWindow):
                 previous = OPENAI_MODEL
             if previous in models:
                 self.model_box.setCurrentText(previous)
-            self.connection_label.setText(f"Verbunden · {len(models)} Modell(e) erkannt")
+            self.connection_label.setText(f"Connected · {len(models)} model(s) found")
             self.connection_button.setEnabled(True)
             self.chatgpt_login_button.setEnabled(True)
             self._provider_visibility()
@@ -841,7 +829,7 @@ class DesktopWindow(QMainWindow):
         def failed(exc: Exception) -> None:
             if generation == self._model_generation:
                 self.connection_label.setText(
-                    str(exc) + " Manuelle Angabe unter Erweitert möglich."
+                    str(exc) + " You can enter a model manually under Advanced."
                 )
                 self.connection_button.setEnabled(True)
                 self.chatgpt_login_button.setEnabled(True)
@@ -870,7 +858,7 @@ class DesktopWindow(QMainWindow):
             if not self.manual_model.isChecked():
                 if not self._models or self._model_address != values["local_llm.address"]:
                     raise ValueError(
-                        "Prüfe zuerst den lokalen Server oder lege das Modell unter Erweitert fest."
+                        "Check the local server first or set the model under Advanced."
                     )
                 values["local_llm.model"] = self.model_box.currentText()
         elif self.key_input.text().strip() and not (
@@ -880,13 +868,11 @@ class DesktopWindow(QMainWindow):
         values[f"{backend}.manual_model"] = str(self.manual_model.isChecked()).lower()
         if self.manual_model.isChecked():
             if not self.model_input.text().strip():
-                raise ValueError(
-                    "Gib eine Modellkennung ein oder verwende die automatische Auswahl."
-                )
+                raise ValueError("Enter a model identifier or use automatic selection.")
             values[self._model_key()] = self.model_input.text().strip()
         elif backend == "openai":
             if not self.model_box.currentText():
-                raise ValueError("Melde dich mit ChatGPT an und wähle ein verfügbares Modell.")
+                raise ValueError("Sign in with ChatGPT and select an available model.")
             values[self._model_key()] = self.model_box.currentText()
         elif backend != "local_llm":
             values[f"{backend}.model"] = {"gemini": GEMINI_MODEL, "zhipuai": ZHIPUAI_MODEL}[backend]
@@ -925,7 +911,7 @@ class DesktopWindow(QMainWindow):
 
     def _choose_source(self) -> bool:
         name, _ = QFileDialog.getOpenFileName(
-            self, "CSV auswählen", "", "Textdateien (*.csv *.tsv *.txt);;Alle Dateien (*)"
+            self, "Select CSV", "", "Text files (*.csv *.tsv *.txt);;All files (*)"
         )
         if not name:
             return False
@@ -933,17 +919,17 @@ class DesktopWindow(QMainWindow):
             self.preview = inspect_csv(Path(name))
             self.file_label.setText(self.preview.path.name)
             self.format_label.setText(
-                f"{self.preview.encoding} · Trennzeichen {self.preview.delimiter!r} · "
-                f"{len(self.preview.headers)} Spalten"
+                f"{self.preview.encoding} · delimiter {self.preview.delimiter!r} · "
+                f"{len(self.preview.headers)} columns"
             )
             self._mapping_boxes = []
             self.sample_table.setRowCount(len(self.preview.headers))
             for row, name in enumerate(self.preview.headers):
                 values = [
-                    ("Produkt-ID", "product_id"),
-                    ("Beschreibung", "description"),
-                    ("Zusatzinfo für die KI", "context"),
-                    ("Nicht für die KI verwenden", "ignore"),
+                    ("Product ID", "product_id"),
+                    ("Description", "description"),
+                    ("Context for AI", "context"),
+                    ("Do not use for AI", "ignore"),
                 ]
                 selector = combo(values)
                 selector.setCurrentIndex(selector.findData(suggest_role(name)))
@@ -975,18 +961,18 @@ class DesktopWindow(QMainWindow):
             if box.currentData() != "ignore"
         ]
         if not any(m["role"] == "description" for m in mappings):
-            self._error("Wähle mindestens eine Beschreibungsspalte.")
+            self._error("Select at least one description column.")
             return
         if sum(m["role"] == "product_id" for m in mappings) > 1:
-            self._error("Wähle höchstens eine Produkt-ID-Spalte.")
+            self._error("Select no more than one product ID column.")
             return
         if (
             self._status.get("progress", {}).get("total")
             and QMessageBox.question(
                 self,
-                "Aktuellen Durchlauf ersetzen",
-                "Die neue CSV ersetzt den aktuellen Durchlauf. "
-                "Exportiere vorher die Ergebnisse, die du behalten möchtest. Neue CSV laden?",
+                "Replace current batch",
+                "The new CSV replaces the current batch. "
+                "Export any results you want to retain first. Load the new CSV?",
             )
             != QMessageBox.StandardButton.Yes
         ):
@@ -1047,10 +1033,10 @@ class DesktopWindow(QMainWindow):
             self.results_table.blockSignals(True)
             self.results_table.setRowCount(len(self._shown_products))
             names = {
-                "done": "Fertig",
-                "error": "Fehler",
-                "pending": "Ausstehend",
-                "processing": "In Arbeit",
+                "done": "Done",
+                "error": "Error",
+                "pending": "Pending",
+                "processing": "Processing",
             }
             for row, product in enumerate(self._shown_products):
                 for column, text in enumerate(
@@ -1063,8 +1049,8 @@ class DesktopWindow(QMainWindow):
                     self.results_table.setItem(row, column, QTableWidgetItem(text))
             self.results_table.blockSignals(False)
             self.page_label.setText(
-                f"{self._offset + 1 if self._shown_products else 0} bis "
-                f"{self._offset + len(self._shown_products)} von {self._matching_total}"
+                f"{self._offset + 1 if self._shown_products else 0} to "
+                f"{self._offset + len(self._shown_products)} of {self._matching_total}"
             )
             self.previous_button.setEnabled(self._offset > 0)
             self.next_button.setEnabled(self._offset + 100 < self._matching_total)
@@ -1072,7 +1058,7 @@ class DesktopWindow(QMainWindow):
                 self.results_table.selectRow(0)
                 self._show_selected_product()
             else:
-                self.product_title.setText("Keine passenden Produkte")
+                self.product_title.setText("No matching products")
                 self.original_detail.clear()
                 self.detail.clear()
         except Exception as exc:
@@ -1085,20 +1071,20 @@ class DesktopWindow(QMainWindow):
         try:
             product = self.session.product(self._shown_products[row]["id"])
             identifier = product["product_id_value"]
-            self.product_title.setText(f"Produkt {identifier[:64]}")
+            self.product_title.setText(f"Product {identifier[:64]}")
             self.product_title.setToolTip(identifier)
             self.original_detail.setPlainText(
                 product["original_description"]
-                + ("\n[… gekürzt]" if product["original_truncated"] else "")
+                + ("\n[… truncated]" if product["original_truncated"] else "")
             )
             self.detail.setPlainText(
                 (
                     product["optimized_description"]
                     or product["error_message"]
-                    or "Noch nicht verarbeitet"
+                    or "Not processed yet"
                 )
                 + (
-                    "\n[… gekürzt]"
+                    "\n[… truncated]"
                     if product["optimized_truncated"] or product["error_truncated"]
                     else ""
                 )
@@ -1160,7 +1146,7 @@ class DesktopWindow(QMainWindow):
         self.select_errors.blockSignals(True)
         self.select_errors.setCheckState(state)
         self.select_errors.blockSignals(False)
-        self.retry_button.setText(f"{count:,} ausgewählte erneut verarbeiten".replace(",", "."))
+        self.retry_button.setText(f"Retry {count:,} selected".replace(",", "."))
         self.retry_button.setEnabled(count > 0 and not self._status.get("busy"))
 
     def _select_all_errors(self, checked: bool) -> None:
@@ -1175,7 +1161,7 @@ class DesktopWindow(QMainWindow):
 
     def _import_corrections(self) -> None:
         name, _ = QFileDialog.getOpenFileName(
-            self, "Korrigierte CSV einlesen", "", "Textdateien (*.csv *.tsv *.txt)"
+            self, "Import corrected CSV", "", "Text files (*.csv *.tsv *.txt)"
         )
         if name:
             try:
@@ -1189,7 +1175,7 @@ class DesktopWindow(QMainWindow):
         self.export_body.show()
         self.save_button.show()
         self.prepare_export_button.hide()
-        self.export_subtitle.setText("Eine neue Datei für dein Zielsystem erstellen.")
+        self.export_subtitle.setText("Create a new file for your target system.")
         self.export_scope.setCurrentIndex(self.export_scope.findData(scope))
         self._show_page(3)
 
@@ -1212,15 +1198,15 @@ class DesktopWindow(QMainWindow):
             format_ = self.format_editor.value()
         except Exception as exc:
             self.export_error.setText(str(exc))
-            self.export_preview.setPlainText("Für die Vorschau ein gültiges CSV-Format wählen.")
+            self.export_preview.setPlainText("Select a valid CSV format to preview the export.")
             return
         scope = self.export_scope.currentData()
         self.export_title.setText(
             {
-                "done": "Ergebnisse exportieren",
-                "all": "Ergebnisse exportieren",
-                "errors": "Fehlerliste exportieren",
-                "corrections": "Korrekturdatei exportieren",
+                "done": "Export results",
+                "all": "Export results",
+                "errors": "Export error list",
+                "corrections": "Export correction file",
             }[scope]
         )
         counts = self._status.get("progress", {})
@@ -1235,16 +1221,16 @@ class DesktopWindow(QMainWindow):
                 if g["kind"] == "missing_data"
             ),
         }[scope]
-        unit = "Produkt" if export_count == 1 else "Produkte"
-        self.save_button.setText(f"{export_count:,} {unit} speichern unter …".replace(",", "."))
+        unit = "product" if export_count == 1 else "products"
+        self.save_button.setText(f"Save {export_count:,} {unit} as …".replace(",", "."))
         notes = {
-            "done": (f"Alle Originalspalten + optimierter Text + Status. {n} Fehler ausgelassen."),
+            "done": (f"All original columns + optimized text + status. {n} errors excluded."),
             "all": (
-                f"Alle Originalspalten + optimierter Text + Status. {n} Fehler ohne neuen Text."
+                f"All original columns + optimized text + status. {n} errors without new text."
             ),
-            "errors": "Fehlerhafte Produkte mit allen Originalspalten, Fehlerursache und Status.",
+            "errors": "Failed products with all original columns, error cause, and status.",
             "corrections": (
-                "Produkte ohne Quelldaten, mit allen Originalspalten. Produkt-IDs beibehalten."
+                "Products without source data, with all original columns. Product IDs are retained."
             ),
         }
         self.export_note.setText(notes[scope])
@@ -1254,7 +1240,7 @@ class DesktopWindow(QMainWindow):
             if generation != self._export_generation:
                 return
             self.export_preview.setPlainText(text.replace("\t", "⇥"))
-            self._export_valid = not text.startswith("Keine Produkte")
+            self._export_valid = not text.startswith("No products")
             self.save_button.setEnabled(self._export_valid and not self._status.get("busy"))
 
         def failed(exc: Exception) -> None:
@@ -1267,15 +1253,15 @@ class DesktopWindow(QMainWindow):
     def _start_export(self) -> None:
         try:
             format_ = self.format_editor.value()
-            suffix = {"errors": "-fehler", "corrections": "-korrektur"}.get(
-                self.export_scope.currentData(), "-optimiert"
+            suffix = {"errors": "-errors", "corrections": "-correction"}.get(
+                self.export_scope.currentData(), "-optimized"
             )
-            source = Path(self._status.get("source_file") or "produkte.csv")
+            source = Path(self._status.get("source_file") or "products.csv")
             name, _ = QFileDialog.getSaveFileName(
                 self,
-                "CSV speichern",
+                "Save CSV",
                 str(source.with_name(source.stem + suffix + ".csv")),
-                "Textdateien (*.csv *.tsv *.txt)",
+                "Text files (*.csv *.tsv *.txt)",
             )
             if name:
                 self._start_action(
@@ -1320,7 +1306,7 @@ class DesktopWindow(QMainWindow):
         def failed(exc: Exception) -> None:
             self._polling = False
             if generation == self._status_generation:
-                self.daemon_label.setText(f"Hintergrunddienst nicht erreichbar: {exc}")
+                self.daemon_label.setText(f"Background service unavailable: {exc}")
 
         def finished(status: dict[str, Any]) -> None:
             self._polling = False
@@ -1334,7 +1320,7 @@ class DesktopWindow(QMainWindow):
         try:
             self._apply_status(self.session.status())
         except Exception as exc:
-            self.daemon_label.setText(f"Hintergrunddienst nicht erreichbar: {exc}")
+            self.daemon_label.setText(f"Background service unavailable: {exc}")
 
     def _apply_status(self, status: dict[str, Any]) -> None:
         if self._hidden_to_tray and not self._tray_available():
@@ -1346,18 +1332,18 @@ class DesktopWindow(QMainWindow):
         busy, total = status["busy"], progress["total"]
         count = progress["done"] + progress["error"]
         self.daemon_label.setText(
-            f"Fortschritt lokal gespeichert · {count:,} von {total:,} verarbeitet".replace(",", ".")
+            f"Progress saved locally · {count:,} of {total:,} processed".replace(",", ".")
         )
         self.source_label.setText(
-            Path(status["source_file"]).name if status.get("source_file") else "Neuer Durchlauf"
+            Path(status["source_file"]).name if status.get("source_file") else "New batch"
         )
         self.results_summary.setText(
             (
-                f"{total:,} Produkte · {progress['done']:,} erfolgreich · "
-                f"{progress['error']:,} Fehler"
+                f"{total:,} products · {progress['done']:,} successful · "
+                f"{progress['error']:,} errors"
             ).replace(",", ".")
         )
-        self.result_tabs.setTabText(1, f"Fehler ({progress['error']})")
+        self.result_tabs.setTabText(1, f"Errors ({progress['error']})")
         self.settings_button.setEnabled(not busy)
         self.import_button.setEnabled(self.preview is not None and not busy)
         self.browse_button.setEnabled(not busy)
@@ -1367,7 +1353,7 @@ class DesktopWindow(QMainWindow):
         self.optimize_button.setVisible(not busy)
         pending = progress["pending"]
         self.optimize_button.setText(
-            f"{pending:,} {'Produkt' if pending == 1 else 'Produkte'} optimieren".replace(",", ".")
+            f"Optimize {pending:,} {'product' if pending == 1 else 'products'}".replace(",", ".")
         )
         self.export_button.setEnabled(progress["done"] + progress["error"] > 0 and not busy)
         self.new_button.setEnabled(not busy)
@@ -1378,13 +1364,13 @@ class DesktopWindow(QMainWindow):
         self.run_panel.setVisible(busy)
         self.progress_bar.setRange(0, total or 1)
         self.progress_bar.setValue(count)
-        state = {"importing": "CSV wird eingelesen", "exporting": "CSV wird gespeichert"}.get(
-            status["stage"], "Verarbeitung läuft"
+        state = {"importing": "Importing CSV", "exporting": "Saving CSV"}.get(
+            status["stage"], "Processing"
         )
         if status["paused"]:
-            state = "Pausiert · aktuelles Produkt wird noch abgeschlossen"
-        self.run_status.setText(f"{state} · {count} von {total}")
-        self.pause_button.setText("Fortsetzen" if status["paused"] else "Pausieren")
+            state = "Paused · current product will finish"
+        self.run_status.setText(f"{state} · {count} of {total}")
+        self.pause_button.setText("Resume" if status["paused"] else "Pause")
         self.pause_button.setEnabled(busy and status["stage"] == "optimizing")
         self.nav_buttons[0].setEnabled(not busy)
         self.nav_buttons[1].setEnabled(total > 0)
@@ -1403,9 +1389,9 @@ class DesktopWindow(QMainWindow):
             status.get("can_correct", False) and progress["error"] > 0 and not busy
         )
         self.correction_note.setText(
-            "Korrekturimport ordnet Zeilen über eindeutige Produkt-IDs zu."
+            "Correction import matches rows by unique product IDs."
             if status.get("can_correct")
-            else "Korrekturimport benötigt eine zugeordnete Produkt-ID-Spalte."
+            else "Correction import requires a mapped product ID column."
         )
         self.error_export_button.setEnabled(progress["error"] > 0 and not busy)
         if (
@@ -1437,7 +1423,7 @@ class DesktopWindow(QMainWindow):
                 self._show_page(1)
                 if result.get("skipped_count"):
                     self._error(
-                        f"{result['skipped_count']} Zeilen konnten nicht importiert werden. "
+                        f"{result['skipped_count']} rows could not be imported. "
                         + "\n".join(result.get("errors", [])[:3])
                     )
             elif action in {"optimize", "correction"}:
@@ -1446,18 +1432,18 @@ class DesktopWindow(QMainWindow):
                     self.result_tabs.setCurrentIndex(1)
             elif action == "export":
                 self.export_error.setText(
-                    f"Gespeichert: {result.get('output_path', '')} · "
-                    f"{result.get('total_exported', 0)} Produkte"
+                    f"Saved: {result.get('output_path', '')} · "
+                    f"{result.get('total_exported', 0)} products"
                 )
                 self.export_success.setText(
-                    "Export abgeschlossen\n"
+                    "Export complete\n"
                     + f"{result.get('total_exported', 0):,}".replace(",", ".")
-                    + " Produkte · "
+                    + " products · "
                     + Path(result.get("output_path", "")).name
                 )
                 self.export_success.show()
-                self.export_title.setText("Export abgeschlossen")
-                self.export_subtitle.setText("Deine CSV-Datei wurde gespeichert.")
+                self.export_title.setText("Export complete")
+                self.export_subtitle.setText("Your CSV file was saved.")
                 self.export_body.hide()
                 self.save_button.hide()
                 self.prepare_export_button.show()

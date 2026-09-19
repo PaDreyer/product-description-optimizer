@@ -25,7 +25,7 @@ class CodexOptimizer(BaseLLMOptimizer):
 
     def __init__(self, *, home: Path, model: str, executable: str = "codex", **kwargs: Any) -> None:
         if not model.strip():
-            raise ConfigError("Bitte zuerst ein ChatGPT-Modell in den Einstellungen auswählen.")
+            raise ConfigError("Select a ChatGPT model in Settings first.")
         super().__init__(**kwargs)
         self._home = home
         self._model = model

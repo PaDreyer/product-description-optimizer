@@ -283,7 +283,7 @@ class Database:
             ValueError: For unknown or non-retryable groups.
         """
         if not kinds or any(k not in ERROR_GROUPS or not ERROR_GROUPS[k][1] for k in kinds):
-            raise ValueError("Wähle mindestens eine wiederholbare Fehlergruppe.")
+            raise ValueError("Select at least one retryable error group.")
         placeholders = ",".join("?" for _ in kinds)
         with self._conn:
             ids = [
@@ -314,18 +314,18 @@ class Database:
             for product in products:
                 key = product["product_id_value"]
                 if not key or key in seen:
-                    raise ImportDataError(f"Fehlende oder doppelte Produkt-ID: {key!r}")
+                    raise ImportDataError(f"Missing or duplicate product ID: {key!r}")
                 seen.add(key)
                 matches = self._conn.execute(
                     "SELECT id, status FROM products WHERE product_id_value = ?", (key,)
                 ).fetchall()
                 if len(matches) != 1 or matches[0]["status"] != "error":
-                    raise ImportDataError(f"Produkt-ID {key!r} ist nicht eindeutig fehlerhaft.")
+                    raise ImportDataError(f"Product ID {key!r} is not uniquely in an error state.")
                 if not product["original_description"].strip() and not product["context_data"]:
-                    raise ImportDataError(f"Produkt {key!r} enthält weiterhin keine Quelldaten.")
+                    raise ImportDataError(f"Product {key!r} still has no source data.")
                 self._conn.execute(
                     "UPDATE products SET raw_data = ?, original_description = ?, context_data = ?, "
-                    "error_kind = 'corrected', error_message = 'Quelldaten korrigiert', "
+                    "error_kind = 'corrected', error_message = 'Source data corrected', "
                     "updated_at = CURRENT_TIMESTAMP WHERE id = ?",
                     (
                         json.dumps(product["raw_data"], ensure_ascii=False),
@@ -362,7 +362,7 @@ class Database:
             "corrections": "status = 'error' AND error_kind = 'missing_data'",
         }
         if scope not in filters:
-            raise ValueError("Ungültiger Exportumfang.")
+            raise ValueError("Invalid export scope.")
         rows = self._conn.execute(
             f"SELECT * FROM products WHERE id > ? AND ({filters[scope]}) ORDER BY id LIMIT ?",
             (after_id, max(0, min(limit, 500))),

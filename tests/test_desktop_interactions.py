@@ -154,12 +154,12 @@ def test_cancel_settings_keeps_text_draft_and_discards_provider_changes(
         try:
             window.show()
             # Populate through the text editor; cancelling connection settings must not erase it.
-            window.style_input.setPlainText("Sachlich und freundlich, bitte mit du.")
+            window.style_input.setPlainText("Factual, friendly, and conversational.")
             click(window.settings_button)
             window.backend_box.setCurrentIndex(window.backend_box.findData("dummy"))
-            click(named(window, "Abbrechen"))
+            click(named(window, "Cancel"))
             assert window.backend_box.currentData() == "gemini"
-            assert window.style_input.toPlainText() == "Sachlich und freundlich, bitte mit du."
+            assert window.style_input.toPlainText() == "Factual, friendly, and conversational."
             click(window.settings_button)
             window.backend_box.setCurrentIndex(window.backend_box.findData("dummy"))
             click(window.nav_buttons[0])
@@ -195,13 +195,12 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_DontUseNativeDialogs, True)
     qapp.setStyle("Fusion")
     config = _config(tmp_path)
-    source = tmp_path / "sortiment.csv"
+    source = tmp_path / "catalog.csv"
     with source.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream, delimiter=";")
-        writer.writerow(["SKU", "Beschreibung"])
+        writer.writerow(["SKU", "Description"])
         writer.writerows(
-            (f"P{i:05}", f'Tasche Größe L, "blau" {i}' if i <= 19978 else "")
-            for i in range(1, 20_001)
+            (f"P{i:05}", f'Bag size L, "blue" {i}' if i <= 19978 else "") for i in range(1, 20_001)
         )
     optimizer = ControlledOptimizer()
     with (
@@ -218,21 +217,21 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             assert window.preview is None
             choose_file(window.browse_button, source)
             assert window.sample_table.rowCount() == 2
-            capture(window, "02-spaltenzuordnung")
+            capture(window, "02-column-mapping")
             click(window.import_button)
             wait_for(lambda: window.pages.currentIndex() == 1)
             click(window.settings_button)
             window.backend_box.setCurrentIndex(window.backend_box.findData("dummy"))
             click(window.settings_save_button)
-            capture(window, "03-optimierung")
+            capture(window, "03-optimization")
             click(window.optimize_button)
             wait_for(lambda: optimizer.started.is_set() and window.pause_button.isVisible())
-            capture(window, "04-verarbeitung")
+            capture(window, "04-processing")
             click(window.pause_button)
             optimizer.release.set()
             wait_for(lambda: window._status.get("paused") is True)
             QTest.qWait(100)
-            capture(window, "04-pausiert")
+            capture(window, "04-paused")
             before = len(optimizer.attempts)
             QTest.qWait(150)
             assert len(optimizer.attempts) == before
@@ -240,7 +239,7 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             window._exit_gui()
             window = DesktopWindow(DesktopSession(config, auto_start=False))
             window.show()
-            assert window.pause_button.text() == "Fortsetzen"
+            assert window.pause_button.text() == "Resume"
             click(window.pause_button)
             wait_for(lambda: window.pages.currentIndex() == 2, timeout=45)
             assert window._status["progress"] == {
@@ -250,7 +249,7 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
                 "pending": 0,
                 "processing": 0,
             }
-            capture(window, "05-fehlergruppen")
+            capture(window, "05-error-groups")
             click(window.select_errors)
             assert not window.retry_button.isEnabled()
             click(window.select_errors)
@@ -265,16 +264,16 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             assert optimizer.attempts["P19641"] == 2
             click(window.correction_export_button)
             wait_for(lambda: window.save_button.isEnabled())
-            correction = tmp_path / "korrektur.csv"
+            correction = tmp_path / "correction.csv"
             choose_file(window.save_button, correction)
-            wait_for(lambda: "Gespeichert:" in window.export_error.text())
+            wait_for(lambda: "Saved:" in window.export_error.text())
             with correction.open(encoding="utf-8", newline="") as stream:
                 rows = list(csv.DictReader(stream, delimiter=";"))
             assert len(rows) == 22
             with correction.open("w", encoding="utf-16", newline="") as stream:
-                writer = csv.DictWriter(stream, fieldnames=["SKU", "Beschreibung"], delimiter=";")
+                writer = csv.DictWriter(stream, fieldnames=["SKU", "Description"], delimiter=";")
                 writer.writeheader()
-                writer.writerows({**row, "Beschreibung": "Ergänzte Tasche"} for row in rows)
+                writer.writerows({**row, "Description": "Completed bag"} for row in rows)
             click(window.nav_buttons[2])
             choose_file(window.correction_import_button, correction)
             wait_for(lambda: window.retry_button.isEnabled())
@@ -286,7 +285,7 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
                     and window._status["progress"]["done"] == 20_000
                 )
             )
-            capture(window, "06-alle-fertig")
+            capture(window, "06-all-done")
             choose_file(window.new_button, None)
             assert window.pages.currentIndex() == 2
             bar = window.result_tabs.tabBar()
@@ -297,7 +296,7 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             QTest.keyClicks(window.search_input, "P20000")
             QTest.keyClick(window.search_input, Qt.Key.Key_Return)
             assert window.results_table.rowCount() == 1
-            assert "ERGÄNZTE TASCHE" in window.detail.toPlainText()
+            assert "COMPLETED BAG" in window.detail.toPlainText()
             capture(window, "06-textvergleich")
             click(window.export_button)
             wait_for(lambda: window.save_button.isEnabled())
@@ -311,15 +310,15 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             )
             wait_for(lambda: window.save_button.isEnabled())
             capture(window, "08-export-utf16")
-            output = tmp_path / "zielsystem.csv"
+            output = tmp_path / "target-system.csv"
             choose_file(window.save_button, output)
-            wait_for(lambda: "Gespeichert:" in window.export_error.text())
-            capture(window, "09-export-fertig")
+            wait_for(lambda: "Saved:" in window.export_error.text())
+            capture(window, "09-export-done")
             assert output.read_bytes().startswith(b"\xff\xfe")
             with output.open(encoding="utf-16", newline="") as stream:
                 rows = list(csv.DictReader(stream, delimiter="\t"))
             assert len(rows) == 20_000
-            assert rows[-1]["optimized_description"] == "[OPTIMIZED] ERGÄNZTE TASCHE"
+            assert rows[-1]["optimized_description"] == "[OPTIMIZED] COMPLETED BAG"
             click(window.prepare_export_button)
             click(window.format_editor.advanced_toggle)
             scroll = window.pages.currentWidget().findChild(QScrollArea)
@@ -335,9 +334,9 @@ def test_twenty_thousand_product_flow_by_clicks_and_actual_files(
             scroll.ensureWidgetVisible(window.format_editor.custom)
             window.format_editor.custom.setFocus()
             QTest.keyClicks(window.format_editor.custom, "xx")
-            wait_for(lambda: "einzelne Zeichen" in window.export_error.text())
+            wait_for(lambda: "one character" in window.export_error.text())
             assert not window.save_button.isEnabled()
-            assert "gültiges CSV-Format" in window.export_preview.toPlainText()
+            assert "valid CSV format" in window.export_preview.toPlainText()
             scroll.verticalScrollBar().setValue(0)
             capture(window, "15-export-ungueltig")
             assert warning.call_count == 0, warning.call_args_list
@@ -352,7 +351,7 @@ def test_model_discovery_through_local_http_and_real_controls(
     import json
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-    available = ["lokales-modell"]
+    available = ["local-model"]
     requests = []
 
     class Handler(BaseHTTPRequestHandler):
@@ -387,28 +386,28 @@ def test_model_discovery_through_local_http_and_real_controls(
                 )
                 QTest.keyClicks(window.address_input, f"http://127.0.0.1:{server.server_port}/v1")
                 click(window.connection_button)
-                wait_for(lambda: window._models == ["lokales-modell"])
+                wait_for(lambda: window._models == ["local-model"])
                 assert not window.model_box.isVisible()
                 assert not window.model_input.isVisible()
-                capture(window, "10-verbindung-ein-modell")
-                available.append("zweites-modell")
+                capture(window, "10-connection-one-model")
+                available.append("second-model")
                 click(window.connection_button)
                 wait_for(lambda: window.model_box.isVisible())
                 window.model_box.setFocus()
                 QTest.keyClick(window.model_box, Qt.Key.Key_Down)
-                assert window.model_box.currentText() == "zweites-modell"
-                capture(window, "11-verbindung-mehrere-modelle")
+                assert window.model_box.currentText() == "second-model"
+                capture(window, "11-connection-multiple-models")
                 click(window.settings_save_button)
-                assert window.session.config.options["local_llm.model"] == "zweites-modell"
-                source = tmp_path / "lokales-sortiment.csv"
-                source.write_text("SKU;Beschreibung\nP1;Blaue Tasche\n", encoding="utf-8")
+                assert window.session.config.options["local_llm.model"] == "second-model"
+                source = tmp_path / "local-catalog.csv"
+                source.write_text("SKU;Description\nP1;Blue bag\n", encoding="utf-8")
                 choose_file(window.browse_button, source)
                 click(window.import_button)
                 wait_for(lambda: window.pages.currentIndex() == 1)
                 assert window.style_input.isVisible()
-                capture(window, "03-optimierung-lokal")
+                capture(window, "03-local-optimization")
                 click(window.text_options_toggle)
-                capture(window, "03-textvorgaben")
+                capture(window, "03-text-options")
                 click(window.settings_button)
                 window.backend_box.setFocus()
                 QTest.keyClick(window.backend_box, Qt.Key.Key_Down)
@@ -416,10 +415,10 @@ def test_model_discovery_through_local_http_and_real_controls(
                 assert window.key_input.isVisible()
                 assert not window.model_input.isVisible()
                 assert not window.address_input.isVisible()
-                capture(window, "12-cloud-verbindung")
+                capture(window, "12-cloud-connection")
                 click(window.manual_model)
                 assert window.model_input.isVisible()
-                capture(window, "13-manuelles-modell")
+                capture(window, "13-manual-model")
                 assert requests == ["/v1/models", "/v1/models"]
             finally:
                 window._exit_gui()
@@ -440,7 +439,7 @@ def test_partial_error_group_selection_by_mouse(tmp_path: Path, qapp: QApplicati
                     "source_row_number": i,
                     "product_id_value": f"P{i}",
                     "raw_data": {},
-                    "original_description": "Tasche",
+                    "original_description": "Bag",
                 }
                 for i in range(3)
             ]

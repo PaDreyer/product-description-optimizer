@@ -5,17 +5,21 @@ __doc__ = """Stable error categories and guidance for batch recovery."""
 from typing import Any
 
 ERROR_GROUPS: dict[str, tuple[str, bool, str]] = {
-    "timeout": ("Zeitüberschreitung", True, "Verbindung prüfen und erneut verarbeiten."),
+    "timeout": ("Timeout", True, "Check the connection and retry."),
     "rate_limit": (
-        "API-Limit erreicht",
+        "API rate limit reached",
         True,
-        "Mit Wartezeit und reduzierter Anfragerate wiederholen.",
+        "Retry with a delay and reduced request rate.",
     ),
-    "connection": ("Verbindungsfehler", True, "Server starten bzw. Verbindung prüfen."),
-    "missing_data": ("Quelldaten fehlen", False, "Quelldaten exportieren, ergänzen und einlesen."),
-    "authentication": ("Zugangsdaten abgelehnt", True, "Zugang in den Einstellungen korrigieren."),
-    "corrected": ("Quelldaten korrigiert", True, "Die ergänzten Produkte erneut verarbeiten."),
-    "other": ("Weitere Fehler", True, "Fehlerliste prüfen und bei Bedarf erneut verarbeiten."),
+    "connection": ("Connection error", True, "Start the server or check the connection."),
+    "missing_data": (
+        "Source data missing",
+        False,
+        "Export source data, complete it, and import it again.",
+    ),
+    "authentication": ("Credentials rejected", True, "Correct the credentials in Settings."),
+    "corrected": ("Source data corrected", True, "Retry the completed products."),
+    "other": ("Other errors", True, "Check the error list and retry if needed."),
 }
 
 

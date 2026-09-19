@@ -99,7 +99,7 @@ def import_csv(
             raise ImportDataError("CSV has no header row.")
         _validate_columns_exist(column_mappings, headers)
         if len(set(headers)) != len(headers) or any(not h.strip() for h in headers):
-            raise ImportDataError("CSV-Spaltennamen müssen eindeutig und nicht leer sein.")
+            raise ImportDataError("CSV column names must be unique and nonempty.")
         stored_format = detected.to_dict()
         stored_format["delimiter"] = parse_options["delimiter"]
         db.set_metadata("source_format", stored_format)
@@ -180,17 +180,17 @@ def import_corrections(db: Database, path: Path, format_: CsvFormat) -> int:
     mappings = [ColumnMapping(**m) for m in db.get_column_mappings()]
     id_cols = [m for m in mappings if m.role == "product_id"]
     if len(id_cols) != 1:
-        raise ImportDataError("Für Korrekturen ist genau eine eindeutige Produkt-ID-Spalte nötig.")
+        raise ImportDataError("Corrections require exactly one unique product ID column.")
     products = []
     with path.open(encoding=read_encoding(format_), newline="") as stream:
         reader = csv.DictReader(stream, **format_.reader_kwargs(), strict=True)
         headers = reader.fieldnames or []
         if headers != db.get_metadata("source_headers", headers):
-            raise ImportDataError("Die Korrekturdatei muss dieselben Originalspalten enthalten.")
+            raise ImportDataError("The correction file must contain the same original columns.")
         _validate_columns_exist(mappings, headers)
         for number, row in enumerate(reader, 1):
             if None in row or any(value is None for value in row.values()):
-                raise ImportDataError(f"Unvollständige CSV-Zeile {number}.")
+                raise ImportDataError(f"Incomplete CSV row {number}.")
             products.append(
                 _build_product_dict(
                     row_number=number,
@@ -201,7 +201,7 @@ def import_corrections(db: Database, path: Path, format_: CsvFormat) -> int:
                 )
             )
     if not products:
-        raise ImportDataError("Die Korrekturdatei enthält keine Produkte.")
+        raise ImportDataError("The correction file contains no products.")
     return db.apply_corrections(products)
 
 

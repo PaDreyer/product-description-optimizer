@@ -23,15 +23,15 @@ FIXTURES = Path(__file__).parent / "fixtures"
 SAMPLE_CSV = FIXTURES / "sample_products.csv"
 
 MAPPINGS = [
-    ColumnMapping(role="product_id", csv_column_name="ProduktID"),
-    ColumnMapping(role="description", csv_column_name="Beschreibung"),
-    ColumnMapping(role="context", csv_column_name="Titel"),
-    ColumnMapping(role="context", csv_column_name="Marke"),
-    ColumnMapping(role="context", csv_column_name="Kategorie"),
-    ColumnMapping(role="context", csv_column_name="Merkmal 1"),
-    ColumnMapping(role="context", csv_column_name="Attribut 1"),
-    ColumnMapping(role="context", csv_column_name="Merkmal 2"),
-    ColumnMapping(role="context", csv_column_name="Attribut 2"),
+    ColumnMapping(role="product_id", csv_column_name="ProductID"),
+    ColumnMapping(role="description", csv_column_name="Description"),
+    ColumnMapping(role="context", csv_column_name="Title"),
+    ColumnMapping(role="context", csv_column_name="Brand"),
+    ColumnMapping(role="context", csv_column_name="Category"),
+    ColumnMapping(role="context", csv_column_name="Feature 1"),
+    ColumnMapping(role="context", csv_column_name="Attribute 1"),
+    ColumnMapping(role="context", csv_column_name="Feature 2"),
+    ColumnMapping(role="context", csv_column_name="Attribute 2"),
 ]
 
 
@@ -57,8 +57,8 @@ class TestFullPipeline:
 
         # Verify specific product data
         p1 = next(p for p in products if p["product_id_value"] == "P001")
-        assert "Kugelschreiber" in p1["original_description"]
-        assert p1["context_data"]["Marke"] == "SchreibGut"
+        assert "ballpoint pen" in p1["original_description"]
+        assert p1["context_data"]["Brand"] == "WriteWell"
 
         # P004 has empty description
         p4 = next(p for p in products if p["product_id_value"] == "P004")
@@ -88,7 +88,7 @@ class TestFullPipeline:
         assert "status" in reader.fieldnames
 
         # Original data preserved
-        assert rows[0]["ProduktID"] == "P001"
+        assert rows[0]["ProductID"] == "P001"
         assert rows[0]["status"] == "done"
         assert "[OPTIMIZED]" in rows[0]["optimized_description"]
 
@@ -105,14 +105,14 @@ class TestFullPipeline:
         products = db.get_all_products()
         raw = products[0]["raw_data"]
         for col in [
-            "ProduktID",
-            "Titel",
-            "Beschreibung",
-            "Marke",
-            "Kategorie",
-            "Preis",
-            "Merkmal 1",
-            "Attribut 1",
+            "ProductID",
+            "Title",
+            "Description",
+            "Brand",
+            "Category",
+            "Price",
+            "Feature 1",
+            "Attribute 1",
         ]:
             assert col in raw, f"Missing column {col} in raw_data"
 

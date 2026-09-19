@@ -72,7 +72,7 @@ def test_login_models_generation_and_cleanup(fake_server: list, tmp_path: Path) 
 
 def test_cleanup_on_operation_failure(fake_server: list, tmp_path: Path) -> None:
     with (
-        pytest.raises(ConfigError, match="Browser"),
+        pytest.raises(ConfigError, match="browser"),
         CodexClient(tmp_path / "profile") as client,
         patch("pdo.core.codex_client.webbrowser.open", return_value=False),
     ):
@@ -83,7 +83,7 @@ def test_cleanup_on_operation_failure(fake_server: list, tmp_path: Path) -> None
 def test_missing_cli_actionable(tmp_path: Path) -> None:
     with (
         patch("pdo.core.codex_client.shutil.which", return_value=None),
-        pytest.raises(ConfigError, match="Codex CLI fehlt"),
+        pytest.raises(ConfigError, match="Codex CLI is missing"),
         CodexClient(tmp_path),
     ):
         pass
@@ -158,7 +158,7 @@ def test_subscription_optimizer_and_registry(tmp_path: Path) -> None:
 def test_invalid_auth_mode_and_missing_model_fail_closed() -> None:
     with pytest.raises(ConfigError, match="auth_mode"):
         create_optimizer("openai", PdoConfig(options={"openai.auth_mode": "typo"}))
-    with pytest.raises(ConfigError, match="ChatGPT-Modell"):
+    with pytest.raises(ConfigError, match="ChatGPT model"):
         create_optimizer("openai", PdoConfig(options={"openai.auth_mode": "chatgpt"}))
 
 
@@ -167,7 +167,7 @@ def test_closed_gui_cancels_pending_codex_request(tmp_path: Path) -> None:
 
     cancel = threading.Event()
     cancel.set()
-    with pytest.raises(ConfigError, match="abgebrochen"):
+    with pytest.raises(ConfigError, match="interrupted"):
         CodexClient(tmp_path, cancel=cancel).event(time.monotonic() + 180)
 
 
@@ -223,7 +223,7 @@ def test_login_rejects_untrusted_browser_urls(tmp_path: Path, url: str) -> None:
     with (
         patch.object(CodexClient, "call", return_value={"authUrl": url}),
         patch("pdo.core.codex_client.webbrowser.open") as browser,
-        pytest.raises(ConfigError, match="Anmeldeadresse"),
+        pytest.raises(ConfigError, match="sign-in address"),
     ):
         CodexClient(tmp_path).login()
     browser.assert_not_called()
@@ -243,7 +243,7 @@ def test_buffered_notifications_cannot_bypass_deadline_or_cancellation(
             client._messages.put(event)
     if cancelled:
         client._cancel.set()
-    with pytest.raises(ConfigError, match="abgebrochen" if cancelled else "timeout"):
+    with pytest.raises(ConfigError, match="interrupted" if cancelled else "timeout"):
         client.event(time.monotonic() + (30 if cancelled else -1))
 
 

@@ -28,7 +28,7 @@ def _seed_products(db: Database, count: int = 5) -> None:
                 "raw_data": {"name": f"Product {i}"},
                 "product_id_value": f"P{i:04d}",
                 "original_description": f"Description for product {i}",
-                "context_data": {"Marke": f"Brand{i}", "Titel": f"Title {i}"},
+                "context_data": {"Brand": f"Brand{i}", "Title": f"Title {i}"},
             }
             for i in range(count)
         ]
@@ -47,8 +47,8 @@ class TestDummyOptimizer:
 
     def test_includes_context(self) -> None:
         opt = DummyOptimizer()
-        result = opt.optimize("P001", "desc", context={"Marke": "BrandX"})
-        assert "Marke=BrandX" in result
+        result = opt.optimize("P001", "desc", context={"Brand": "BrandX"})
+        assert "Brand=BrandX" in result
 
 
 class TestRunOptimization:

@@ -28,11 +28,11 @@ def discover_openai_models(api_key: str) -> list[str]:
     from pdo.core.provider_defaults import OPENAI_ADDRESS
 
     if not api_key.strip():
-        raise ConfigError("Bitte einen OpenAI API-Schlüssel hinterlegen.")
+        raise ConfigError("Add an OpenAI API key first.")
     try:
         from openai import APIError, OpenAI
     except ImportError as exc:
-        raise ConfigError("OpenAI SDK fehlt: pip install 'pdo[openai]'") from exc
+        raise ConfigError("OpenAI SDK is missing: pip install 'pdo[openai]'") from exc
     try:
         with OpenAI(
             api_key=api_key.strip(), base_url=OPENAI_ADDRESS, timeout=10, max_retries=0
@@ -40,9 +40,9 @@ def discover_openai_models(api_key: str) -> list[str]:
             models = client.models.list().data
     except APIError as exc:
         status = getattr(exc, "status_code", None)
-        detail = f"HTTP {status}" if status else "Verbindungsfehler"
+        detail = f"HTTP {status}" if status else "connection error"
         raise ConfigError(
-            f"OpenAI Modellerkennung: {detail}. Prüfe API-Schlüssel und API-Zugriff."
+            f"OpenAI model discovery: {detail}. Check the API key and API access."
         ) from exc
     excluded = (
         "audio",
@@ -65,7 +65,7 @@ def discover_openai_models(api_key: str) -> list[str]:
         }
     )
     if not candidates:
-        raise ConfigError("OpenAI liefert keine passenden Textmodelle für diesen API-Schlüssel.")
+        raise ConfigError("OpenAI returned no compatible text models for this API key.")
     return candidates[:500]
 
 
@@ -83,21 +83,21 @@ def discover_models(address: str) -> list[str]:
     """
     url = urlsplit(address)
     if url.scheme not in {"http", "https"} or not url.hostname or url.query or url.fragment:
-        raise ConfigError("Bitte eine gültige HTTP(S)-Serveradresse angeben.")
+        raise ConfigError("Enter a valid HTTP(S) server address.")
     if url.username or url.password:
-        raise ConfigError("Zugangsdaten gehören nicht in die Serveradresse.")
+        raise ConfigError("Credentials must not be included in the server address.")
     try:
         request = Request(address.rstrip("/") + "/models", headers={"Accept": "application/json"})
         with urlopen(request, timeout=3) as response:
             data = response.read(1_000_001)
         if len(data) > 1_000_000:
-            raise ValueError("Modellantwort ist zu groß.")
+            raise ValueError("Model response is too large.")
         try:
             payload = json.loads(data)
         except (ValueError, UnicodeError) as exc:
-            raise ValueError("Der Server liefert keine gültige Modellliste.") from exc
+            raise ValueError("The server returned an invalid model list.") from exc
         if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-            raise ValueError("Der Server liefert keine gültige Modellliste.")
+            raise ValueError("The server returned an invalid model list.")
         models = list(
             dict.fromkeys(
                 row["id"]
@@ -106,16 +106,16 @@ def discover_models(address: str) -> list[str]:
             )
         )
         if not models:
-            raise ValueError("Kein Modell verfügbar. Lade zuerst ein Modell auf dem Server.")
+            raise ValueError("No model is available. Load a model on the server first.")
         return models[:500]
     except HTTPError as exc:
         raise ConfigError(
-            f"Modellerkennung: Der Server lehnt die Anfrage ab (HTTP {exc.code}). "
-            "Prüfe die API-Adresse und die Zugriffseinstellungen des Servers."
+            f"Model discovery: the server rejected the request (HTTP {exc.code}). "
+            "Check the API address and server access settings."
         ) from exc
     except (URLError, OSError) as exc:
         raise ConfigError(
-            "Modellerkennung: Server nicht erreichbar. Prüfe die Adresse und ob der Server läuft."
+            "Model discovery: server unavailable. Check the address and that the server is running."
         ) from exc
     except ValueError as exc:
-        raise ConfigError(f"Modellerkennung fehlgeschlagen: {exc}") from exc
+        raise ConfigError(f"Model discovery failed: {exc}") from exc

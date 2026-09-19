@@ -52,8 +52,7 @@ class CodexClient:
         executable = shutil.which(self._executable)
         if not executable:
             raise ConfigError(
-                "Codex CLI fehlt. Installiere Codex und starte PDO neu "
-                "oder setze openai.codex_path."
+                "Codex CLI is missing. Install Codex and restart PDO, or set openai.codex_path."
             )
         self._home.mkdir(parents=True, exist_ok=True, mode=0o700)
         env = dict(os.environ)
@@ -176,16 +175,16 @@ class CodexClient:
         try:
             while line := stream.readline(1_000_001):
                 if len(line) > 1_000_000:
-                    raise ConfigError("Codex-Antwort ist zu groß.")
+                    raise ConfigError("Codex response is too large.")
                 message = json.loads(line)
                 if not isinstance(message, dict):
-                    raise ConfigError("Ungültige Codex-Antwort.")
+                    raise ConfigError("Invalid Codex response.")
                 self._messages.put(message)
         except (OSError, ValueError, ConfigError) as exc:
-            self._messages.put(ConfigError(f"Codex-Protokollfehler: {type(exc).__name__}"))
+            self._messages.put(ConfigError(f"Codex protocol error: {type(exc).__name__}"))
         finally:
             stream.close()
-            self._messages.put(ConfigError("Codex wurde beendet. Prüfe die CLI-Installation."))
+            self._messages.put(ConfigError("Codex exited. Check the CLI installation."))
 
     def _send(self, message: dict[str, Any]) -> None:
         assert self._process and self._process.stdin
@@ -193,7 +192,7 @@ class CodexClient:
             self._process.stdin.write(json.dumps(message) + "\n")
             self._process.stdin.flush()
         except OSError as exc:
-            raise ConfigError("Verbindung zu Codex abgebrochen.") from exc
+            raise ConfigError("Connection to Codex was interrupted.") from exc
 
     def _receive(self, deadline: float) -> dict[str, Any]:
         while True:
@@ -203,7 +202,7 @@ class CodexClient:
             except queue.Empty as exc:
                 if time.monotonic() < deadline:
                     continue
-                raise ConfigError("Codex timeout: Anfrage hat zu lange gedauert.") from exc
+                raise ConfigError("Codex timeout: request took too long.") from exc
             if isinstance(message, Exception):
                 raise message
             if "method" in message and "id" in message:
@@ -219,9 +218,9 @@ class CodexClient:
 
     def _check_wait(self, deadline: float) -> None:
         if self._cancel.is_set():
-            raise ConfigError("Codex-Anfrage abgebrochen.")
+            raise ConfigError("Codex request was interrupted.")
         if time.monotonic() >= deadline:
-            raise ConfigError("Codex timeout: Anfrage hat zu lange gedauert.")
+            raise ConfigError("Codex timeout: request took too long.")
 
     def call(self, method: str, params: dict[str, Any], timeout: float = 15) -> dict[str, Any]:
         """Send a request while retaining intervening notifications.
@@ -245,9 +244,7 @@ class CodexClient:
             message = self._receive(deadline)
             if message.get("id") == request_id:
                 if "error" in message:
-                    raise ConfigError(
-                        f"Codex: {message['error'].get('message', 'Anfrage fehlgeschlagen')}"
-                    )
+                    raise ConfigError(f"Codex: {message['error'].get('message', 'Request failed')}")
                 return message.get("result", {})
             if "method" in message:
                 self._events.append(message)
@@ -275,7 +272,7 @@ class CodexClient:
         """
         account = self.call("account/read", {"refreshToken": False}).get("account")
         if not account or account.get("type") != "chatgpt":
-            raise ConfigError("ChatGPT authentication fehlt. Melde dich in PDO mit ChatGPT an.")
+            raise ConfigError("ChatGPT authentication is missing. Sign in with ChatGPT in PDO.")
 
     def login(self) -> None:
         """Open the official browser login and wait up to three minutes.
@@ -297,9 +294,9 @@ class CodexClient:
         except ValueError:
             valid = False
         if not valid:
-            raise ConfigError("Codex lieferte keine gültige OpenAI-Anmeldeadresse.")
+            raise ConfigError("Codex returned an invalid OpenAI sign-in address.")
         if not webbrowser.open(url):
-            raise ConfigError("Browser konnte nicht geöffnet werden. Prüfe den Standardbrowser.")
+            raise ConfigError("Could not open the browser. Check the default browser.")
         deadline = time.monotonic() + 180
         while True:
             event = self.event(deadline)
@@ -308,7 +305,7 @@ class CodexClient:
                 if params.get("loginId") != result.get("loginId"):
                     continue
                 if not params.get("success"):
-                    raise ConfigError("ChatGPT-Anmeldung fehlgeschlagen. Bitte erneut anmelden.")
+                    raise ConfigError("ChatGPT sign-in failed. Please try again.")
                 self.require_subscription()
                 return
 
@@ -333,7 +330,7 @@ class CodexClient:
             if not cursor:
                 break
         if not models:
-            raise ConfigError("Codex liefert keine verfügbaren Modelle für dieses Konto.")
+            raise ConfigError("Codex returned no available models for this account.")
         return list(dict.fromkeys(models))
 
     def generate(self, model: str, system: str, user: str) -> str:
@@ -388,8 +385,8 @@ class CodexClient:
                     if completed.get("status") != "completed":
                         error = completed.get("error") or {}
                         raise OptimizationError(
-                            f"Codex: {error.get('message', 'Antwort abgebrochen')}"
+                            f"Codex: {error.get('message', 'Response interrupted')}"
                         )
                     if not final_text:
-                        raise OptimizationError("Codex hat keinen Antworttext geliefert.")
+                        raise OptimizationError("Codex returned no response text.")
                     return final_text

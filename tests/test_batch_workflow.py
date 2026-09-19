@@ -31,26 +31,26 @@ def db() -> Iterator[Database]:
     """Return an isolated database with source columns and column assignments."""
     with Database(":memory:") as database:
         database.initialize()
-        database.set_metadata("source_headers", ["SKU", "Beschreibung"])
+        database.set_metadata("source_headers", ["SKU", "Description"])
         database.set_column_mappings(
             [
                 {"role": "product_id", "csv_column_name": "SKU", "display_name": "SKU"},
                 {
                     "role": "description",
-                    "csv_column_name": "Beschreibung",
-                    "display_name": "Beschreibung",
+                    "csv_column_name": "Description",
+                    "display_name": "Description",
                 },
             ]
         )
         yield database
 
 
-def _products(count: int, description: str = 'Größe L, blau; "weich"\nzweite Zeile') -> list[dict]:
+def _products(count: int, description: str = 'Size L, blue; "soft"\nsecond line') -> list[dict]:
     return [
         {
             "source_row_number": i,
             "product_id_value": f"P{i}",
-            "raw_data": {"SKU": f"P{i}", "Beschreibung": description},
+            "raw_data": {"SKU": f"P{i}", "Description": description},
             "original_description": description,
             "context_data": None,
         }
@@ -91,7 +91,7 @@ def test_export_preserves_text_in_each_supported_encoding_and_separator(
     text = data.decode(read_encoding(format_))
     assert text == preview_csv(db, format_)
     row = next(csv.DictReader(io.StringIO(text, newline=""), **format_.reader_kwargs()))
-    assert row["Beschreibung"] == _products(1)[0]["original_description"]
+    assert row["Description"] == _products(1)[0]["original_description"]
     assert row["optimized_description"].startswith("[OPTIMIZED]")
     assert row["status"] == "done"
 
@@ -102,7 +102,7 @@ def test_export_preserves_text_in_each_supported_encoding_and_separator(
 def test_custom_dialect_quotes_and_headers_roundtrip(
     db: Database, tmp_path: Path, newline: str, doublequote: bool, header: bool
 ) -> None:
-    db.insert_products(_products(1, "Text 'zitiert' ^ Backslash \\"))
+    db.insert_products(_products(1, "Text 'quoted' ^ Backslash \\"))
     run_optimization(db, DummyOptimizer())
     format_ = CsvFormat(
         delimiter="^",
@@ -118,7 +118,7 @@ def test_custom_dialect_quotes_and_headers_roundtrip(
     assert text.endswith(newline)
     rows = list(csv.reader(io.StringIO(text, newline=""), **format_.reader_kwargs()))
     assert len(rows) == (2 if header else 1)
-    assert rows[-1][1] == "Text 'zitiert' ^ Backslash \\"
+    assert rows[-1][1] == "Text 'quoted' ^ Backslash \\"
     assert text == preview_csv(db, format_)
 
 
@@ -147,7 +147,7 @@ def test_unrepresentable_late_row_keeps_existing_output_intact(
     db: Database, tmp_path: Path
 ) -> None:
     products = _products(501)
-    products[-1]["raw_data"]["Beschreibung"] = "Unicode 😀"
+    products[-1]["raw_data"]["Description"] = "Unicode 😀"
     db.insert_products(products)
     output = tmp_path / "existing.csv"
     output.write_text("Existing export", encoding="utf-8")
@@ -163,7 +163,7 @@ def test_source_file_cannot_be_overwritten(db: Database, tmp_path: Path) -> None
     source.write_text("Original", encoding="utf-8")
     db.insert_products(_products(1))
     db.set_pipeline_state("idle", source_file=str(source))
-    with pytest.raises(ExportError, match="Quelldatei"):
+    with pytest.raises(ExportError, match="source file"):
         export_csv(db, source, scope="all")
     assert source.read_text() == "Original"
 
@@ -195,7 +195,7 @@ def test_existing_status_and_result_columns_are_preserved(db: Database, tmp_path
 @pytest.mark.parametrize("encoding", ["utf-8-sig", "utf-16", "utf-16-be", "cp1252"])
 def test_import_detects_encoding_delimiter_and_source_format(tmp_path: Path, encoding: str) -> None:
     source = tmp_path / "source.csv"
-    source.write_bytes("SKU,Beschreibung\r\nP1,Größe L\r\n".encode(encoding))
+    source.write_bytes("SKU,Description\r\nP1,Size L\r\n".encode(encoding))
     format_ = detect_format(source)
     assert format_.delimiter == ","
     assert format_.lineterminator == "\r\n"
@@ -206,19 +206,19 @@ def test_import_detects_encoding_delimiter_and_source_format(tmp_path: Path, enc
             source,
             column_mappings=[
                 ColumnMapping("product_id", "SKU", "SKU"),
-                ColumnMapping("description", "Beschreibung", "Beschreibung"),
+                ColumnMapping("description", "Description", "Description"),
             ],
             format_=format_,
         )
         assert result.imported_count == 1
-        assert database.get_product(1)["original_description"] == "Größe L"
+        assert database.get_product(1)["original_description"] == "Size L"
         assert database.get_metadata("source_format") == format_.to_dict()
 
 
 def test_group_retry_covers_all_twenty_thousand_rows_but_preserves_other_work(db: Database) -> None:
-    db.insert_products(_products(20_000, "Tasche"))
+    db.insert_products(_products(20_000, "Bag"))
     with db._conn:
-        db._conn.execute("UPDATE products SET status = 'done', optimized_description = 'Behalten'")
+        db._conn.execute("UPDATE products SET status = 'done', optimized_description = 'Retained'")
         db._conn.execute(
             "UPDATE products SET status = 'error', error_kind = 'timeout' WHERE id > 19000"
         )
@@ -232,8 +232,8 @@ def test_group_retry_covers_all_twenty_thousand_rows_but_preserves_other_work(db
     assert len(ids) == 800
     run_optimization(db, DummyOptimizer(), product_ids=ids)
     assert db.get_product(1)["status"] == "pending"
-    assert db.get_product(2)["optimized_description"] == "Behalten"
-    assert db.get_product(19_001)["optimized_description"] == "[OPTIMIZED] TASCHE"
+    assert db.get_product(2)["optimized_description"] == "Retained"
+    assert db.get_product(19_001)["optimized_description"] == "[OPTIMIZED] BAG"
     assert db.get_product(20_000)["status"] == "error"
     assert db.count_products(status="error") == 200
     assert db.count_products(search="P20000") == 1
@@ -245,22 +245,22 @@ def test_correction_csv_is_atomic_and_only_changes_uniquely_identified_errors(
 ) -> None:
     db.insert_products(_products(3, ""))
     run_optimization(db, DummyOptimizer())
-    db.update_product_status(3, "done", optimized_description="Bereits fertig")
+    db.update_product_status(3, "done", optimized_description="Already done")
     output = tmp_path / "corrections.csv"
     assert export_csv(db, output, scope="corrections").total_exported == 2
-    assert output.read_text().splitlines()[0] == "SKU;Beschreibung"
+    assert output.read_text().splitlines()[0] == "SKU;Description"
     for invalid_id in ("P1", "P3", "P99", ""):
-        output.write_text(f"SKU;Beschreibung\nP1;Korrigiert\n{invalid_id};Text\n", encoding="utf-8")
+        output.write_text(f"SKU;Description\nP1;Corrected\n{invalid_id};Text\n", encoding="utf-8")
         with pytest.raises(ImportDataError):
             import_corrections(db, output, CsvFormat())
         assert db.get_product(1)["original_description"] == ""
-        assert db.get_product(3)["optimized_description"] == "Bereits fertig"
-    output.write_text("SKU;Beschreibung\nP1;Korrigiert\nP2;Ergänzt\n", encoding="utf-16")
+        assert db.get_product(3)["optimized_description"] == "Already done"
+    output.write_text("SKU;Description\nP1;Corrected\nP2;Completed\n", encoding="utf-16")
     assert import_corrections(db, output, detect_format(output)) == 2
     assert db.get_error_groups()[0]["kind"] == "corrected"
     run_optimization(db, DummyOptimizer(), product_ids=db.requeue_errors(["corrected"]))
     assert db.get_progress()["done"] == 3
-    assert db.get_product(3)["optimized_description"] == "Bereits fertig"
+    assert db.get_product(3)["optimized_description"] == "Already done"
     assert db.get_product(1)["error_message"] is None
 
 
@@ -342,7 +342,7 @@ def test_model_discovery_explains_invalid_or_empty_response(payload: bytes) -> N
     response.__enter__.return_value.read.return_value = payload
     with (
         patch("pdo.core.model_discovery.urlopen", return_value=response),
-        pytest.raises(ConfigError, match="Modellerkennung"),
+        pytest.raises(ConfigError, match="Model discovery"),
     ):
         discover_models("http://localhost/v1")
 
@@ -354,6 +354,6 @@ def test_separator_detection_with_quoted_spaces_and_embedded_quotes(
     source = tmp_path / "quoted.csv"
     with source.open("w", encoding="utf-8", newline="") as stream:
         writer = csv.writer(stream, delimiter=separator)
-        writer.writerow(["SKU", "Beschreibung"])
-        writer.writerows((f"P{i}", f'Tasche Größe L, "blau" {i}') for i in range(300))
+        writer.writerow(["SKU", "Description"])
+        writer.writerows((f"P{i}", f'Bag size L, "blue" {i}') for i in range(300))
     assert detect_format(source).delimiter == separator

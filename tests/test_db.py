@@ -76,10 +76,10 @@ def _sample_products(n: int = 3) -> list[dict]:
     return [
         {
             "source_row_number": i + 1,
-            "raw_data": {"col_a": f"val_{i}", "Beschreibung": f"desc {i}"},
+            "raw_data": {"col_a": f"val_{i}", "Description": f"desc {i}"},
             "product_id_value": f"P{i:04d}",
             "original_description": f"Original description {i}",
-            "context_data": {"Marke": f"Brand{i}"},
+            "context_data": {"Brand": f"Brand{i}"},
         }
         for i in range(n)
     ]
@@ -106,7 +106,7 @@ class TestInsertProducts:
         db.insert_products(_sample_products(1))
         product = db.get_all_products()[0]
         assert isinstance(product["context_data"], dict)
-        assert product["context_data"]["Marke"] == "Brand0"
+        assert product["context_data"]["Brand"] == "Brand0"
 
 
 class TestGetNextPending:
@@ -249,20 +249,20 @@ class TestColumnMappings:
 
     def test_set_and_get_mappings(self, db: Database) -> None:
         mappings = [
-            {"role": "product_id", "csv_column_name": "ProduktID", "display_name": "Product ID"},
+            {"role": "product_id", "csv_column_name": "ProductID", "display_name": "Product ID"},
             {
                 "role": "description",
-                "csv_column_name": "Beschreibung",
+                "csv_column_name": "Description",
                 "display_name": "Description",
             },
-            {"role": "context", "csv_column_name": "Marke", "display_name": "Brand"},
-            {"role": "context", "csv_column_name": "Titel", "display_name": "Title"},
+            {"role": "context", "csv_column_name": "Brand", "display_name": "Brand"},
+            {"role": "context", "csv_column_name": "Title", "display_name": "Title"},
         ]
         db.set_column_mappings(mappings)
         result = db.get_column_mappings()
         assert len(result) == 4
         assert result[0]["role"] == "product_id"
-        assert result[0]["csv_column_name"] == "ProduktID"
+        assert result[0]["csv_column_name"] == "ProductID"
 
     def test_set_replaces_previous_mappings(self, db: Database) -> None:
         db.set_column_mappings(
@@ -282,11 +282,11 @@ class TestColumnMappings:
     def test_display_name_defaults_to_csv_column_name(self, db: Database) -> None:
         db.set_column_mappings(
             [
-                {"role": "context", "csv_column_name": "Merkmal 1"},
+                {"role": "context", "csv_column_name": "Feature 1"},
             ]
         )
         result = db.get_column_mappings()
-        assert result[0]["display_name"] == "Merkmal 1"
+        assert result[0]["display_name"] == "Feature 1"
 
 
 # ── Reset ────────────────────────────────────────────────────────────

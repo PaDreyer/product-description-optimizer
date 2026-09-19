@@ -27,14 +27,14 @@ def _seed_and_optimize(db: Database, count: int = 3) -> None:
             {
                 "source_row_number": i + 1,
                 "raw_data": {
-                    "ProduktID": f"P{i:04d}",
-                    "Titel": f"Product {i}",
-                    "Beschreibung": f"Description {i}",
-                    "Marke": f"Brand{i}",
+                    "ProductID": f"P{i:04d}",
+                    "Title": f"Product {i}",
+                    "Description": f"Description {i}",
+                    "Brand": f"Brand{i}",
                 },
                 "product_id_value": f"P{i:04d}",
                 "original_description": f"Description {i}",
-                "context_data": {"Marke": f"Brand{i}"},
+                "context_data": {"Brand": f"Brand{i}"},
             }
             for i in range(count)
         ]
@@ -59,7 +59,7 @@ class TestExportValid:
         with output.open(encoding="utf-8") as fh:
             reader = csv.DictReader(fh, delimiter=";")
             headers = reader.fieldnames or []
-            assert "ProduktID" in headers
+            assert "ProductID" in headers
             assert "optimized_description" in headers
             assert "status" in headers
 
@@ -72,7 +72,7 @@ class TestExportValid:
             reader = csv.DictReader(fh, delimiter=";")
             rows = list(reader)
         assert len(rows) == 2
-        assert rows[0]["ProduktID"] == "P0000"
+        assert rows[0]["ProductID"] == "P0000"
         assert rows[0]["status"] == "done"
         assert "[OPTIMIZED]" in rows[0]["optimized_description"]
 
@@ -92,14 +92,14 @@ class TestExportIncludeErrors:
             [
                 {
                     "source_row_number": 1,
-                    "raw_data": {"ProduktID": "P001", "Beschreibung": "desc"},
+                    "raw_data": {"ProductID": "P001", "Description": "desc"},
                     "product_id_value": "P001",
                     "original_description": "desc",
                     "context_data": None,
                 },
                 {
                     "source_row_number": 2,
-                    "raw_data": {"ProduktID": "P002", "Beschreibung": "desc2"},
+                    "raw_data": {"ProductID": "P002", "Description": "desc2"},
                     "product_id_value": "P002",
                     "original_description": "desc2",
                     "context_data": None,
@@ -120,7 +120,7 @@ class TestExportIncludeErrors:
             [
                 {
                     "source_row_number": 1,
-                    "raw_data": {"ProduktID": "P001"},
+                    "raw_data": {"ProductID": "P001"},
                     "product_id_value": "P001",
                     "original_description": "desc",
                     "context_data": None,

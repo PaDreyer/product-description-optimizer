@@ -71,6 +71,6 @@ def login_cmd(ctx: click.Context, provider: str) -> None:
             models = client.models()
         ctx.obj.out.result(success=True, provider=provider, models=models)
         if not ctx.obj.json_output:
-            ctx.obj.out.print("ChatGPT angemeldet. Verfügbare Modelle: " + ", ".join(models))
+            ctx.obj.out.print("Signed in to ChatGPT. Available models: " + ", ".join(models))
     except (PdoError, OSError) as exc:
         raise click.ClickException(str(exc)) from exc

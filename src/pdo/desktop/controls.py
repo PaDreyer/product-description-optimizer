@@ -164,9 +164,9 @@ class CsvFormatEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         self.summary = label("", "muted")
         header = QHBoxLayout()
-        header.addWidget(label("CSV-Format"))
+        header.addWidget(label("CSV format"))
         header.addStretch()
-        self.toggle = button("Format anpassen", self._toggle)
+        self.toggle = button("Customize format", self._toggle)
         header.addWidget(self.toggle)
         layout.addLayout(header)
         layout.addWidget(self.summary)
@@ -185,20 +185,20 @@ class CsvFormatEditor(QWidget):
         )
         self.delimiter = combo(
             [
-                ("Semikolon (;)", ";"),
-                ("Komma (,)", ","),
-                ("Tabulator", "\t"),
-                ("Leerzeichen", " "),
-                ("Senkrechter Strich (|)", "|"),
-                ("Eigenes Zeichen", None),
+                ("Semicolon (;)", ";"),
+                ("Comma (,)", ","),
+                ("Tab", "\t"),
+                ("Space", " "),
+                ("Vertical bar (|)", "|"),
+                ("Custom character", None),
             ]
         )
         self.custom = QLineEdit()
-        self.custom.setPlaceholderText("Genau ein Zeichen, z. B. ^")
+        self.custom.setPlaceholderText("Exactly one character, e.g. ^")
         fields = QGridLayout()
         fields.setHorizontalSpacing(24)
         for column, (title, field) in enumerate(
-            (("Zeichenkodierung", self.encoding), ("Trennzeichen", self.delimiter))
+            (("Character encoding", self.encoding), ("Delimiter", self.delimiter))
         ):
             fields.addWidget(label(title), 0, column)
             fields.addWidget(field, 1, column)
@@ -207,9 +207,9 @@ class CsvFormatEditor(QWidget):
         self.custom_field = QWidget()
         custom_layout = QFormLayout(self.custom_field)
         custom_layout.setContentsMargins(0, 0, 0, 0)
-        custom_layout.addRow("Eigenes Trennzeichen", self.custom)
+        custom_layout.addRow("Custom delimiter", self.custom)
         form.addWidget(self.custom_field)
-        self.advanced_toggle = button("Weitere CSV-Details", self._toggle_advanced)
+        self.advanced_toggle = button("More CSV details", self._toggle_advanced)
         self.advanced_toggle.setObjectName("quiet")
         form.addWidget(self.advanced_toggle)
         self.advanced = QWidget()
@@ -220,20 +220,18 @@ class CsvFormatEditor(QWidget):
             [("Windows (CRLF)", "\r\n"), ("Unix / Linux (LF)", "\n"), ("CR", "\r")]
         )
         self.quote = combo(
-            [('Doppelte Anführungszeichen (")', '"'), ("Einfache Anführungszeichen (')", "'")]
+            [('Double quotation marks (")', '"'), ("Single quotation marks (')", "'")]
         )
-        self.quoting = combo([("Nur wenn nötig", "minimal"), ("Alle Felder", "all")])
-        self.escape = combo(
-            [("Anführungszeichen verdoppeln", True), ("Mit Backslash maskieren", False)]
-        )
-        self.bom = checkbox("Kodierungsmarkierung (BOM) schreiben")
-        self.header = checkbox("Spaltennamen in erster Zeile ausgeben")
+        self.quoting = combo([("Only when needed", "minimal"), ("All fields", "all")])
+        self.escape = combo([("Double quotation marks", True), ("Escape with backslash", False)])
+        self.bom = checkbox("Write byte order mark (BOM)")
+        self.header = checkbox("Write column names in the first row")
         for index, (title, widget) in enumerate(
             (
-                ("Zeilenende", self.newline),
-                ("Textbegrenzung", self.quote),
-                ("Anführungszeichen", self.quoting),
-                ("Maskierung", self.escape),
+                ("Line ending", self.newline),
+                ("Text qualifier", self.quote),
+                ("Quoting", self.quoting),
+                ("Escaping", self.escape),
             )
         ):
             row, column = 2 * (index // 2), index % 2
@@ -243,9 +241,9 @@ class CsvFormatEditor(QWidget):
         advanced.addWidget(self.bom, 4, 0, 1, 2)
         advanced.addWidget(self.header, 5, 0, 1, 2)
         form.addWidget(self.advanced)
-        self.remember = checkbox("Dieses Format für weitere Exporte merken")
+        self.remember = checkbox("Remember this format for future exports")
         form.addWidget(self.remember)
-        restore = button("Quellformat übernehmen", lambda: self.set_format(self.source_format))
+        restore = button("Use source format", lambda: self.set_format(self.source_format))
         restore.setObjectName("quiet")
         form.addWidget(restore)
         layout.addWidget(self.options)
@@ -261,9 +259,7 @@ class CsvFormatEditor(QWidget):
 
     def _toggle(self) -> None:
         self.options.setVisible(self.options.isHidden())
-        self.toggle.setText(
-            "Optionen schließen" if not self.options.isHidden() else "Format anpassen"
-        )
+        self.toggle.setText("Close options" if not self.options.isHidden() else "Customize format")
 
     def _toggle_advanced(self) -> None:
         self.advanced.setVisible(self.advanced.isHidden())
@@ -280,12 +276,10 @@ class CsvFormatEditor(QWidget):
         self.bom.setVisible(self.encoding.currentData().startswith("utf-"))
         try:
             format_ = self.value()
-            delimiter = {"\t": "Tabulator", " ": "Leerzeichen"}.get(
-                format_.delimiter, format_.delimiter
-            )
+            delimiter = {"\t": "Tab", " ": "Space"}.get(format_.delimiter, format_.delimiter)
             newline = {"\r\n": "CRLF", "\n": "LF", "\r": "CR"}[format_.lineterminator]
             self.summary.setText(
-                f"{self.encoding.currentText()}{' mit BOM' if format_.bom else ''} · "
+                f"{self.encoding.currentText()}{' with BOM' if format_.bom else ''} · "
                 f"{delimiter} · {newline}"
             )
         except Exception as exc:

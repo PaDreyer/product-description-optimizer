@@ -30,12 +30,12 @@ Your task is to rewrite product descriptions so they are:
 Rules:
 - PRESERVE all quantified claims from the original (percentages, capacities,
   measurements, warranty durations, certifications). These are key selling
-  points. Example: if the original says "50% weiteres Öffnen" or "5 Jahre
-  Garantie", these MUST appear in the output.
+  points. Example: if the original says "50% extra opening capacity" or "5-year
+  warranty", these MUST appear in the output.
 - Prioritize unique selling points and differentiating features — what makes
   this product stand out? Certifications, guarantees, capacity, and
   performance data are more valuable than generic feature lists.
-- Avoid generic filler phrases like "bietet", "verfügt über", "ermöglicht".
+- Avoid generic filler phrases such as "offers", "features", or "enables".
   Instead, describe features with concrete benefits and action.
 - Do NOT invent features, specifications, or claims that are not in the input.
 - Do NOT add superlatives ("best", "leading", "unmatched") unless they are in
@@ -46,7 +46,7 @@ Rules:
 - Do NOT use emoji or special symbols.
 - Reproduce brand names, product names, and attribute values EXACTLY as given —
   do not paraphrase, abbreviate, or expand them.
-- If the context lists a value such as "6 Neonfarben", state it as-is. Do NOT
+- If the context lists a value such as "6 neon colors", state it as-is. Do NOT
   enumerate or invent specific sub-values (e.g. do not list colour names).
 - If the original description is empty, create one based purely on the context
   fields provided.
@@ -86,15 +86,15 @@ Check for:
 3. **Misleading statements** — exaggerations or implications not backed by facts
 4. **Dropped key data** — important quantified claims from the original that
    were omitted (e.g. percentages, capacities, warranty periods,
-   certifications like "Blauer Engel"). Flag as issue if significant data
+   certifications such as "Energy Star"). Flag as an issue if significant data
    was lost.
 5. **Language consistency** — the optimized text should be in the same language
    as the original (or context)
-6. **Grammar errors** — check for correct grammar, especially gendered articles
-   and noun cases (e.g. in German: "ein Griffloch" not "einen Griffloch")
+6. **Grammar errors** — check for correct grammar, including agreement between
+   articles and nouns
 7. **Brand / product name errors** — brand names must be reproduced exactly;
    any misspelling or paraphrase is an error
-8. **Invented specifics** — if an attribute says e.g. "6 Neonfarben", the text
+8. **Invented specifics** — if an attribute says e.g. "6 neon colors", the text
    must NOT list individual colour names or other sub-values not in the input
 9. **Emoji or formatting** — no emoji, special symbols, line breaks, or bullet
    points are allowed

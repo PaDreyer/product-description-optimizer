@@ -64,7 +64,7 @@ def preview_csv(db: Database, format_: CsvFormat, scope: str = "done") -> str:
     """Serialize two actual products and validate their encoding for preview."""
     products = db.export_page(scope, limit=2)
     if not products:
-        return "Keine Produkte für diesen Exportumfang."
+        return "No products for this export scope."
     buffer = io.StringIO(newline="")
     headers = export_columns(db, scope, products[0])
     writer = csv.DictWriter(buffer, fieldnames=headers, **format_.writer_kwargs())
@@ -76,9 +76,7 @@ def preview_csv(db: Database, format_: CsvFormat, scope: str = "done") -> str:
     try:
         text.encode(format_.encoding, errors="strict")
     except UnicodeError as exc:
-        raise ExportError(
-            "Die Vorschau enthält Zeichen außerhalb der gewählten Kodierung."
-        ) from exc
+        raise ExportError("The preview contains characters outside the selected encoding.") from exc
     return text[:40_000]
 
 
@@ -117,7 +115,7 @@ def export_csv(
     output_path = Path(output_path)
     source = db.get_pipeline_state().get("source_file")
     if source and Path(source).resolve() == output_path.resolve():
-        raise ExportError("Wähle eine neue Ausgabedatei; die Quelldatei bleibt erhalten.")
+        raise ExportError("Choose a new output file; the source file is retained.")
     page = db.export_page(scope)
     if not page:
         db.set_pipeline_state("done")
@@ -150,7 +148,7 @@ def export_csv(
                 page = db.export_page(scope, after_id=page[-1]["id"])
         temporary.replace(output_path)
     except (OSError, UnicodeError, csv.Error, ValueError) as exc:
-        raise ExportError(f"CSV-Export fehlgeschlagen: {exc}") from exc
+        raise ExportError(f"CSV export failed: {exc}") from exc
     finally:
         if temporary:
             temporary.unlink(missing_ok=True)

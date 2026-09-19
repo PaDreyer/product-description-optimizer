@@ -42,39 +42,39 @@ The Windows script uses `py -3.12` by default; pass `-Python <path-to-python.exe
 
 ## Load, optimize, and review
 
-1. **Daten laden:** Select a CSV file with unique, nonempty column headers. PDO detects common delimiters, UTF-8, UTF-16 LE/BE, and CP1252. Review the column roles beside the source examples. Map at least one description column, an optional product ID, and relevant context columns. Unmapped columns are preserved in exports but are not sent to the AI. A desktop import replaces the previous batch after confirmation and a successful import; a failed or zero-product replacement keeps the previous batch. Review any skipped-row report.
-2. **Optimieren:** Configure the AI connection under **Einstellungen**. Cloud providers require an API key and use PDO's configured default model unless overridden under **Erweitert**. For a local server, start the model server, enter its OpenAI-compatible API address, and choose **Verbindung prüfen**. A sole discovered model is selected automatically; choose a model if several are available. You can set writing style and an approximate sentence count. **Demo** checks the workflow without an AI call and produces uppercase text with a marker.
-3. **Prüfen & exportieren:** Compare original and optimized text side by side. Search and status filters cover the complete batch; the table displays pages of 100 products. Open **Fehler** to handle errors by cause before exporting.
+1. **Import data:** Select a CSV file with unique, nonempty column headers. PDO detects common delimiters, UTF-8, UTF-16 LE/BE, and CP1252. Review the column roles beside the source examples. Map at least one description column, an optional product ID, and relevant context columns. Unmapped columns are preserved in exports but are not sent to the AI. A desktop import replaces the previous batch after confirmation and a successful import; a failed or zero-product replacement keeps the previous batch. Review any skipped-row report.
+2. **Optimize:** Configure the AI connection under **Settings**. Cloud providers require an API key and use PDO's configured default model unless overridden under **Advanced**. For a local server, start the model server, enter its OpenAI-compatible API address, and choose **Check connection**. A sole discovered model is selected automatically; choose a model if several are available. You can set writing style and an approximate sentence count. **Demo** checks the workflow without an AI call and produces uppercase text with a marker.
+3. **Review & export:** Compare original and optimized text side by side. Search and status filters cover the complete batch; the table displays pages of 100 products. Open **Errors** to handle errors by cause before exporting.
 
-An empty description can be generated from mapped context. **Quelldaten fehlen** means that both description and usable context are absent. Pause takes effect between products; an in-flight AI request can still finish. Completed products are saved immediately.
+An empty description can be generated from mapped context. **Source data missing** means that both description and usable context are absent. Pause takes effect between products; an in-flight AI request can still finish. Completed products are saved immediately.
 
 ## Recover failed products
 
-In **Fehler**, selecting a group includes every matching failed product, regardless of the table page. Retrying those groups preserves successful results and leaves unrelated pending products alone. If the selection includes **API-Limit erreicht**, PDO waits one second before each selected product, in addition to provider retry delays. Correct rejected credentials or an unavailable server before retrying those groups.
+In **Errors**, selecting a group includes every matching failed product, regardless of the table page. Retrying those groups preserves successful results and leaves unrelated pending products alone. If the selection includes **API rate limit reached**, PDO waits one second before each selected product, in addition to provider retry delays. Correct rejected credentials or an unavailable server before retrying those groups.
 
-For **Quelldaten fehlen**:
+For **Source data missing**:
 
-1. Export **Quelldaten zur Korrektur**. This contains only products in that error group and only the original columns.
+1. Export **Source data for correction**. This contains only products in that error group and only the original columns.
 2. Fill in source descriptions or context. Keep the original column names **and order**, product IDs, and header row.
-3. Import the corrected CSV through the correction action in **Fehler**.
-4. Select **Quelldaten korrigiert** and retry. Correction import updates the source data but does not start optimization automatically.
+3. Import the corrected CSV through the correction action in **Errors**.
+4. Select **Source data corrected** and retry. Correction import updates the source data but does not start optimization automatically.
 
 Correction import requires exactly one mapped ID column. Every ID in the correction file must match exactly one failed product in the batch. Missing, duplicate, unknown, ambiguous, or non-error IDs reject the whole file; no partial corrections are applied. IDs need to be unique even if the initial import accepted duplicates. With no suitable ID mapping, prepare a corrected source file for a new batch instead.
 
-**Alle Fehler exportieren** creates a separate error report with original columns, `error_message`, and `status`. It is not directly re-importable as a correction CSV because it has extra columns.
+**Export all errors** creates a separate error report with original columns, `error_message`, and `status`. It is not directly re-importable as a correction CSV because it has extra columns.
 
 ## Export CSV files
 
 | Desktop export choice | Included rows | Added columns |
 | --- | --- | --- |
-| **Nur erfolgreiche Produkte** | Successful products | `optimized_description`, `status` |
-| **Alle Produkte** | All products, including pending and failed rows | `optimized_description`, `status` |
-| **Fehlerliste mit Quelldaten** | All failed products | `error_message`, `status` |
-| **Quelldaten zur Korrektur** | Products in **Quelldaten fehlen** | None |
+| **Successful products only** | Successful products | `optimized_description`, `status` |
+| **All products** | All products, including pending and failed rows | `optimized_description`, `status` |
+| **Error list with source data** | All failed products | `error_message`, `status` |
+| **Source data for correction** | Products in **Source data missing** | None |
 
 All exports preserve the original columns. Only successful rows receive optimized text. If an added column name already exists, PDO uses `pdo_` and, if needed, a numeric suffix, such as `pdo_status_2`.
 
-The desktop export starts with the detected source format or a previously remembered export format. Under **Format anpassen**, choose UTF-8, UTF-16 LE/BE, Windows-1252, or ISO-8859-1 and a semicolon, comma, tab, space, pipe, or custom one-character separator. Further options control BOM, line endings, quotation marks, escaping, and headers. Keep headers enabled for correction files.
+The desktop export starts with the detected source format or a previously remembered export format. Under **Customize format**, choose UTF-8, UTF-16 LE/BE, Windows-1252, or ISO-8859-1 and a semicolon, comma, tab, space, pipe, or custom one-character separator. Further options control BOM, line endings, quotation marks, escaping, and headers. Keep headers enabled for correction files.
 
 The preview uses up to two actual products and the same serializer as the saved file. Later rows can still contain characters outside the chosen encoding. Invalid combinations and unrepresentable characters fail explicitly; a failed export preserves an existing destination file. PDO prevents writing to the active source CSV path. A successful export can replace another existing destination file.
 
@@ -100,7 +100,7 @@ Configure credentials before starting the daemon, for example `pdo config set ge
 
 ```bash
 pdo daemon start
-pdo import products.csv -m product_id:ProduktID -m description:Beschreibung -m context:Marke
+pdo import products.csv -m product_id:ProductID -m description:Description -m context:Brand
 pdo --json status
 ```
 

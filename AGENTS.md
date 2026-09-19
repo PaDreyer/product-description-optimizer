@@ -45,6 +45,11 @@ src/pdo/
 
 ## Code Style - Quick Reference
 
+### Language
+- English only: all user-facing UI text, CLI output, error messages, documentation,
+  code comments, test data, and example content must be written in English.
+- Do not add localized German strings or German-language fixtures.
+
 ### File Header
 - Always start with: `from __future__ import annotations`
 

@@ -158,10 +158,10 @@ def test_model_discovery_filters_specialized_models(client: MagicMock) -> None:
 
 
 def test_discovery_missing_key_and_no_text_models(client: MagicMock) -> None:
-    with pytest.raises(ConfigError, match="API-Schlüssel"):
+    with pytest.raises(ConfigError, match="API key"):
         discover_openai_models("")
     client.__enter__.return_value.models.list.return_value.data = [SimpleNamespace(id="whisper-1")]
-    with pytest.raises(ConfigError, match="keine passenden Textmodelle"):
+    with pytest.raises(ConfigError, match="no compatible text models"):
         discover_openai_models("test")
 
 

@@ -29,20 +29,20 @@ pdo-desktop
 On Windows, run `.\scripts\setup-dev.ps1` in PowerShell, activate
 `.\venv\Scripts\Activate.ps1`, then run `pdo-desktop`. See [Getting Started](docs/getting_started.md) for package installation and source setup.
 
-Follow the three desktop steps: **Daten laden**, **Optimieren**, and **Prüfen & exportieren**. Choose a CSV file, assign a description column, and configure the AI connection under **Einstellungen**. API keys entered in the desktop app are saved in `~/.pdo/config.toml`; on Linux the file is created with owner-only permissions. Environment variables `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `ZHIPUAI_API_KEY` also work.
+Follow the three desktop steps: **Import data**, **Optimize**, and **Review & export**. Choose a CSV file, assign a description column, and configure the AI connection under **Settings**. API keys entered in the desktop app are saved in `~/.pdo/config.toml`; on Linux the file is created with owner-only permissions. Environment variables `OPENAI_API_KEY`, `GEMINI_API_KEY`, and `ZHIPUAI_API_KEY` also work.
 
 The desktop application starts the PDO daemon automatically. On Linux it registers the tray icon through the StatusNotifierItem D-Bus protocol; a StatusNotifier host must be available (for example, KDE Plasma or GNOME with the AppIndicator extension). On Windows it uses the native Qt tray. Closing the window moves the GUI to the tray while imports, optimization, and exports continue. Click the tray icon or choose **Open** from its menu to reopen the window. **Quit** stops the daemon and closes the GUI. If no tray host is available, closing the window exits the GUI client while the daemon continues; use `pdo daemon stop` to stop it. If the host disappears later, PDO restores the window. Opening PDO again reconnects to the same daemon state.
 
 If startup fails, check `~/.pdo/logs/daemon-startup.log` and `~/.pdo/logs/daemon.log`. The source-install CLI can show daemon status with `pdo daemon status` and stop an unresponsive daemon with `pdo daemon repair`.
 
-The demo backend changes text to uppercase and is meant only to check the import and export flow. Choose an AI backend for useful descriptions. A local server must already be running with a model loaded. **Verbindung prüfen** discovers models: a single model is selected automatically, and a chooser appears when several are available. Manual model IDs are optional under **Erweitert**. AI providers receive the mapped description, context fields, and product ID; the validation step also sends the generated text. To keep these requests on your computer, use a model server running on your computer and configure its local address.
+The demo backend changes text to uppercase and is meant only to check the import and export flow. Choose an AI backend for useful descriptions. A local server must already be running with a model loaded. **Check connection** discovers models: a single model is selected automatically, and a chooser appears when several are available. Manual model IDs are optional under **Advanced**. AI providers receive the mapped description, context fields, and product ID; the validation step also sends the generated text. To keep these requests on your computer, use a model server running on your computer and configure its local address.
 
 ## OpenAI access and model selection
 
-Under **Einstellungen → OpenAI**, choose either **API-Schlüssel** or **ChatGPT-Abonnement**:
+Under **Settings → OpenAI**, choose either **API key** or **ChatGPT subscription**:
 
-- **API key:** Enter a key or set `OPENAI_API_KEY`, then use **Verbindung prüfen** to load text-model candidates accessible to your account. Choose a model or enter an ID under **Erweitert**. API usage is billed separately from ChatGPT. The initial model is `gpt-5.6-luna`; access depends on your API account.
-- **ChatGPT subscription:** Install the [official Codex CLI](https://learn.chatgpt.com/docs/codex/cli) separately and make `codex` available on PATH. Choose **Mit ChatGPT anmelden …**, complete the browser login, then select a model. PDO uses the account's Codex models and limits; this does not unlock every ChatGPT or API model. The desktop packages do not bundle Codex. A custom executable path can be set with `pdo config set openai.codex_path /path/to/codex`.
+- **API key:** Enter a key or set `OPENAI_API_KEY`, then use **Check connection** to load text-model candidates accessible to your account. Choose a model or enter an ID under **Advanced**. API usage is billed separately from ChatGPT. The initial model is `gpt-5.6-luna`; access depends on your API account.
+- **ChatGPT subscription:** Install the [official Codex CLI](https://learn.chatgpt.com/docs/codex/cli) separately and make `codex` available on PATH. Choose **Sign in with ChatGPT …**, complete the browser login, then select a model. PDO uses the account's Codex models and limits; this does not unlock every ChatGPT or API model. The desktop packages do not bundle Codex. A custom executable path can be set with `pdo config set openai.codex_path /path/to/codex`.
 
 PDO keeps the model selection for each access method separately. Codex manages the subscription credentials in a separate `codex/` directory beside PDO's config file (normally `~/.pdo/codex/`). An existing Codex app/CLI login is not imported or changed. Login may take up to three minutes; closing PDO cancels a pending login. An unavailable subscription never falls back to API billing.
 
@@ -56,7 +56,7 @@ The CLI connects to the same user-local daemon as the desktop application, so bo
 python -m pip install -e '.[gemini,zhipuai,openai]'
 pdo config set gemini.api_key YOUR_API_KEY
 pdo daemon start
-pdo import products.csv -m product_id:ProduktID -m description:Beschreibung -m context:Marke
+pdo import products.csv -m product_id:ProductID -m description:Description -m context:Brand
 pdo --json status
 ```
 

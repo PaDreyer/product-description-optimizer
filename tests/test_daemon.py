@@ -127,7 +127,7 @@ def _seed_products(db: Database, count: int = 3) -> None:
                 "raw_data": {"name": f"Product {i}"},
                 "product_id_value": f"P{i:04d}",
                 "original_description": f"Description for product {i}",
-                "context_data": {"Marke": f"Brand{i}"},
+                "context_data": {"Brand": f"Brand{i}"},
             }
             for i in range(count)
         ]

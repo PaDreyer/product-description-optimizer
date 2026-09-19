@@ -303,7 +303,7 @@ class DaemonServer:
                 for k in groups
             )
         ):
-            return Response(success=False, error="Ungültige Auswahl wiederholbarer Fehlergruppen.")
+            return Response(success=False, error="Invalid selection of retryable error groups.")
         response = self._handle_settings(payload)
         if not response.success:
             return response
@@ -324,7 +324,7 @@ class DaemonServer:
         format_ = CsvFormat.from_dict(payload["format"]) if "format" in payload else None
         scope = payload.get("scope")
         if scope is not None and scope not in {"done", "all", "completed", "errors", "corrections"}:
-            return Response(success=False, error="Ungültiger Exportumfang.")
+            return Response(success=False, error="Invalid export scope.")
         if payload.get("remember_format") and format_:
             result = self._handle_settings(
                 {"settings": {"export.format": json.dumps(format_.to_dict())}}

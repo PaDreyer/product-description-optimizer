@@ -27,22 +27,22 @@ class CsvFormat:
 
     def __post_init__(self) -> None:
         if self.encoding not in {"utf-8", "utf-16-le", "utf-16-be", "cp1252", "iso8859-1"}:
-            raise ExportError("Nicht unterstützte Zeichenkodierung.")
+            raise ExportError("Unsupported character encoding.")
         for value in (self.delimiter, self.quotechar):
             if not isinstance(value, str) or len(value) != 1 or value in "\r\n\0":
-                raise ExportError("Trenn- und Textbegrenzungszeichen müssen einzelne Zeichen sein.")
+                raise ExportError("Delimiter and text qualifier must each be one character.")
         if self.delimiter == self.quotechar:
-            raise ExportError("Trennzeichen und Textbegrenzungszeichen müssen verschieden sein.")
+            raise ExportError("Delimiter and text qualifier must be different.")
         if not self.doublequote and "\\" in (self.delimiter, self.quotechar):
-            raise ExportError("Backslash ist bereits als Maskierungszeichen belegt.")
+            raise ExportError("Backslash is already used as the escape character.")
         if self.lineterminator not in {"\r\n", "\n", "\r"}:
-            raise ExportError("Ungültiges Zeilenende.")
+            raise ExportError("Invalid line ending.")
         if self.quoting not in {"minimal", "all"}:
-            raise ExportError("Ungültige Anführungszeichen-Einstellung.")
+            raise ExportError("Invalid quoting setting.")
         if any(type(value) is not bool for value in (self.bom, self.doublequote, self.header)):
-            raise ExportError("CSV-Schalter müssen boolesche Werte sein.")
+            raise ExportError("CSV options must be boolean values.")
         if self.bom and not self.encoding.startswith("utf-"):
-            raise ExportError("BOM ist nur für Unicode-Kodierungen verfügbar.")
+            raise ExportError("BOM is available only for Unicode encodings.")
 
     def to_dict(self) -> dict[str, Any]:
         """Return serializable format settings."""
@@ -54,7 +54,7 @@ class CsvFormat:
         try:
             return cls(**values)
         except (TypeError, ValueError) as exc:
-            raise ExportError(f"Ungültiges CSV-Format: {exc}") from exc
+            raise ExportError(f"Invalid CSV format: {exc}") from exc
 
     def writer_kwargs(self) -> dict[str, Any]:
         """Return arguments shared by real exports and their previews."""
@@ -90,7 +90,7 @@ def detect_format(path: Path) -> CsvFormat:
         with path.open("rb") as stream:
             sample = stream.read(64 * 1024)
         if not sample:
-            raise ImportDataError("Die CSV-Datei ist leer.")
+            raise ImportDataError("The CSV file is empty.")
         encoding, bom = "utf-8", False
         for marker, candidate in (
             (codecs.BOM_UTF8, "utf-8"),
@@ -115,7 +115,7 @@ def detect_format(path: Path) -> CsvFormat:
         with path.open(encoding=encoding, newline="") as stream:
             text = stream.read(8192).lstrip("\ufeff")
         if not text.strip():
-            raise ImportDataError("Die CSV-Datei ist leer.")
+            raise ImportDataError("The CSV file is empty.")
         delimiter, quotechar = ";", '"'
         # Spaces inside quoted descriptions can mislead Sniffer's quote heuristic.
         # Prefer punctuation separators, and require a matching multi-column header.
@@ -131,7 +131,7 @@ def detect_format(path: Path) -> CsvFormat:
         newline = "\r\n" if "\r\n" in text else "\n" if "\n" in text else "\r"
         return CsvFormat(encoding, delimiter, bom, newline, quotechar)
     except (OSError, UnicodeError) as exc:
-        raise ImportDataError(f"CSV konnte nicht gelesen werden: {exc}") from exc
+        raise ImportDataError(f"Could not read CSV: {exc}") from exc
 
 
 def read_encoding(format_: CsvFormat) -> str:

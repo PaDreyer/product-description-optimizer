@@ -144,7 +144,7 @@ def run_optimization(
                 db.update_product_status(
                     product["id"],
                     "error",
-                    error_message="Beschreibung und Zusatzinfos fehlen.",
+                    error_message="Description and context fields are missing.",
                     error_kind="missing_data",
                 )
                 failed += 1

@@ -466,8 +466,8 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QAp
 
             for backend, expected_text in (
                 ("gemini", "Google Gemini"),
-                ("local_llm", "Serveradresse"),
-                ("dummy", "auf diesem Computer"),
+                ("local_llm", "server address"),
+                ("dummy", "on this computer"),
             ):
                 window.backend_box.setCurrentIndex(window.backend_box.findData(backend))
                 assert expected_text in window.data_flow_label.text()
@@ -550,7 +550,7 @@ def test_unchecked_checkbox_covers_the_native_indicator_frame(qapp: QApplication
     from pdo.desktop.app import STYLESHEET
     from pdo.desktop.controls import checkbox
 
-    selector = checkbox("Nicht aktiviert")
+    selector = checkbox("Not enabled")
     selector.setStyleSheet(STYLESHEET)
     try:
         selector.show()
@@ -628,7 +628,7 @@ def test_provider_settings_only_request_relevant_fields(tmp_path: Path, qapp: QA
             window._open_settings()
             window.address_input.setText("http://localhost:5678/v1")
             assert window.connection_button.isEnabled()
-            with pytest.raises(ValueError, match="Prüfe zuerst"):
+            with pytest.raises(ValueError, match="Check the local server first"):
                 window._provider_settings()
             window._cancel_settings()
             assert window.address_input.text() == "http://127.0.0.1:11434/v1"
@@ -682,7 +682,7 @@ def test_gui_error_groups_retry_correct_and_export_without_touching_successes(
             assert session.status()["error_groups"][0]["kind"] == "missing_data"
             assert not window.retry_button.isEnabled()
             correction = tmp_path / "correction.csv"
-            correction.write_text("SKU;Description\nP3;Ergänzte Beschreibung\n", encoding="utf-16")
+            correction.write_text("SKU;Description\nP3;Completed description\n", encoding="utf-16")
             with patch(
                 "pdo.desktop.app.QFileDialog.getOpenFileName", return_value=(str(correction), "CSV")
             ):
@@ -698,7 +698,7 @@ def test_gui_error_groups_retry_correct_and_export_without_touching_successes(
             window.search_input.setText("P3")
             window._search_products()
             assert window.results_table.rowCount() == 1
-            assert "ERGÄNZTE" in window.detail.toPlainText()
+            assert "COMPLETED" in window.detail.toPlainText()
             window._open_export("done")
             format_ = CsvFormat(encoding="utf-16-le", delimiter="\t", bom=True)
             window.format_editor.set_format(format_)
@@ -712,19 +712,19 @@ def test_gui_error_groups_retry_correct_and_export_without_touching_successes(
                 window._start_export()
             _wait_for_job(session)
             window._poll()
-            assert "Gespeichert:" in window.export_error.text()
+            assert "Saved:" in window.export_error.text()
             assert output.read_bytes().startswith(b"\xff\xfe")
             with output.open(encoding="utf-16", newline="") as stream:
                 rows = list(csv.DictReader(stream, delimiter="\t"))
             assert len(rows) == 3
-            assert rows[2]["optimized_description"] == "[OPTIMIZED] ERGÄNZTE BESCHREIBUNG"
+            assert rows[2]["optimized_description"] == "[OPTIMIZED] COMPLETED DESCRIPTION"
             assert '"utf-16-le"' in session.config.options["export.format"]
             window.prepare_export_button.click()
             window.format_editor.delimiter.setCurrentIndex(5)
             window.format_editor.custom.setText("xx")
             window._refresh_export_preview()
             assert not window.save_button.isEnabled()
-            assert "einzelne Zeichen" in window.export_error.text()
+            assert "one character" in window.export_error.text()
             assert window.select_errors.checkState() != Qt.CheckState.PartiallyChecked
         finally:
             window._exit_gui()
@@ -914,7 +914,7 @@ def test_openai_settings_discover_select_save_and_restore(
             window._cancel_settings()
             assert window._provider_settings()["openai.model"] == "gpt-4.1"
             window.backend_box.setCurrentIndex(window.backend_box.findData("local_llm"))
-            with pytest.raises(ValueError, match="Prüfe zuerst"):
+            with pytest.raises(ValueError, match="Check the local server first"):
                 window._provider_settings()
         finally:
             window._exit_gui()

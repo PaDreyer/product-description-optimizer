@@ -85,11 +85,11 @@ Headers must be unique and nonempty. Encoding is detected (UTF-8, UTF-16 LE/BE, 
 
 ```bash
 pdo import catalogue.csv \
-  -m product_id:ProduktID \
-  -m description:Beschreibung \
-  -m context:Titel \
-  -m context:Marke \
-  -m "context:Merkmal 1"
+  -m product_id:ProductID \
+  -m description:Description \
+  -m context:Title \
+  -m context:Brand \
+  -m "context:Feature 1"
 ```
 
 ---
@@ -112,7 +112,7 @@ An explicit `--optimizer` also saves that backend in the daemon's config file an
 
 ### `pdo optimizer list`
 
-List registered backends and dependency/key checks in the CLI environment. The current `active` label and JSON `default` field show the **automatic fallback choice**, not the saved backend or the daemon's current job. The local backend is always listed as available; this is not a connectivity, model, or SDK check. Use desktop **Verbindung prüfen** for local model discovery.
+List registered backends and dependency/key checks in the CLI environment. The current `active` label and JSON `default` field show the **automatic fallback choice**, not the saved backend or the daemon's current job. The local backend is always listed as available; this is not a connectivity, model, or SDK check. Use desktop **Check connection** for local model discovery.
 
 ---
 
@@ -332,4 +332,4 @@ validate_temperature = "0.1"
 
 Manage via `pdo config set / get / list` — no manual editing required.
 
-The desktop app writes the same provider keys under **Einstellungen**. AI requests include mapped descriptions and context; validation also includes the mapped product ID and generated text. The server address determines where local-backend requests go: use a server on your own computer to keep those requests there.
+The desktop app writes the same provider keys under **Settings**. AI requests include mapped descriptions and context; validation also includes the mapped product ID and generated text. The server address determines where local-backend requests go: use a server on your own computer to keep those requests there.

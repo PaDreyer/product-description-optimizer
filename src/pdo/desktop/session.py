@@ -52,7 +52,7 @@ def inspect_csv(path: Path) -> CsvPreview:
                 or any(not h.strip() for h in headers)
                 or len(set(headers)) != len(headers)
             ):
-                raise ImportDataError("Die CSV braucht eindeutige, nicht leere Spaltennamen.")
+                raise ImportDataError("CSV column names must be unique and nonempty.")
             rows = [row for _, row in zip(range(5), reader, strict=False)]
             return CsvPreview(
                 path, headers, rows, format_.delimiter, read_encoding(format_), format_
@@ -71,22 +71,17 @@ def suggest_role(header: str) -> str:
         One of ``product_id``, ``description``, ``context``, or ``ignore``.
     """
     normalized = header.casefold().replace("_", " ").replace("-", " ").strip()
-    if normalized in {"id", "sku", "product id", "produkt id", "produktid", "artikelnummer"}:
+    if normalized in {"id", "sku", "product id", "productid", "item number"}:
         return "product_id"
-    if any(word in normalized for word in ("beschreibung", "description", "produkttext")):
+    if "description" in normalized:
         return "description"
     if any(
         word in normalized
         for word in (
-            "titel",
             "title",
             "name",
-            "marke",
             "brand",
-            "kategorie",
             "category",
-            "merkmal",
-            "attribut",
             "feature",
         )
     ):

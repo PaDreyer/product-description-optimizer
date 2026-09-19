@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager, suppress
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,6 +27,9 @@ from pdo.daemon.server import DaemonServer
 from pdo.desktop.session import DesktopSession, inspect_csv, suggest_role
 from pdo.exceptions import DaemonNotRunningError
 from pdo.protocol.messages import Response, receive_message, send_message
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QApplication
 
 
 @contextmanager
@@ -439,13 +443,9 @@ def test_failed_replacement_import_preserves_current_batch(tmp_path: Path) -> No
         assert session.products()[0]["original_description"] == "Existing text"
 
 
-def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
+def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path, qapp: QApplication) -> None:
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     with _running_daemon(config):
         window = DesktopWindow(DesktopSession(config, auto_start=False))
@@ -489,28 +489,28 @@ def test_desktop_window_runs_guided_workflow_offscreen(tmp_path: Path) -> None:
             window._start_export()
             _wait_for_job(window.session)
             window._poll()
-            app.processEvents()
+            qapp.processEvents()
             assert output.is_file()
         finally:
             window._exit_gui()
 
 
-def test_window_close_hides_to_tray_without_stopping_daemon(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+def test_window_close_hides_to_tray_without_stopping_daemon(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    from PySide6.QtWidgets import QSystemTrayIcon
 
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     tray = MagicMock()
     with _running_daemon(config):
         with patch.object(DesktopWindow, "_create_tray", return_value=tray):
             window = DesktopWindow(DesktopSession(config, auto_start=False))
         window.show()
-        app.processEvents()
+        qapp.processEvents()
         window.close()
-        app.processEvents()
+        qapp.processEvents()
         assert not window.isVisible()
         tray.notify.assert_called_once()
         assert send_command("ping", config=config).success
@@ -530,13 +530,9 @@ def test_window_close_hides_to_tray_without_stopping_daemon(tmp_path: Path) -> N
         window._exit_gui()
 
 
-def test_tray_quit_stops_daemon_and_gui(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
+def test_tray_quit_stops_daemon_and_gui(tmp_path: Path, qapp: QApplication) -> None:
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     tray = MagicMock()
     tray.available = True
@@ -544,14 +540,14 @@ def test_tray_quit_stops_daemon_and_gui(tmp_path: Path) -> None:
         with patch.object(DesktopWindow, "_create_tray", return_value=tray):
             window = DesktopWindow(DesktopSession(config, auto_start=False))
         window.show()
-        app.processEvents()
+        qapp.processEvents()
         window.close()
         assert not window.isVisible()
         assert send_command("ping", config=config).success
         menu = window._build_qt_tray_menu()
         assert [action.text() for action in menu.actions()] == ["Open", "Quit"]
         menu.actions()[0].trigger()
-        app.processEvents()
+        qapp.processEvents()
         assert window.isVisible()
         assert send_command("ping", config=config).success
         window.close()
@@ -564,13 +560,11 @@ def test_tray_quit_stops_daemon_and_gui(tmp_path: Path) -> None:
         assert not window.isVisible()
 
 
-def test_tray_quit_keeps_gui_open_if_daemon_rejects_stop(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
+def test_tray_quit_keeps_gui_open_if_daemon_rejects_stop(
+    tmp_path: Path, qapp: QApplication
+) -> None:
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     tray = MagicMock()
     tray.available = True
@@ -578,7 +572,7 @@ def test_tray_quit_keeps_gui_open_if_daemon_rejects_stop(tmp_path: Path) -> None
         with patch.object(DesktopWindow, "_create_tray", return_value=tray):
             window = DesktopWindow(DesktopSession(config, auto_start=False))
         window.show()
-        app.processEvents()
+        qapp.processEvents()
         window.close()
         assert not window.isVisible()
         with (
@@ -592,37 +586,33 @@ def test_tray_quit_keeps_gui_open_if_daemon_rejects_stop(tmp_path: Path) -> None
         window._exit_gui()
 
 
-def test_window_close_quits_gui_when_tray_is_unavailable(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
+def test_window_close_quits_gui_when_tray_is_unavailable(
+    tmp_path: Path, qapp: QApplication
+) -> None:
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     with _running_daemon(config):
         with patch.object(DesktopWindow, "_create_tray", return_value=None):
             window = DesktopWindow(DesktopSession(config, auto_start=False))
-        with patch.object(app, "quit") as quit_app:
+        with patch.object(qapp, "quit") as quit_app:
             window.close()
         quit_app.assert_called_once()
         assert send_command("ping", config=config).success
 
 
-def test_window_close_quits_gui_after_tray_host_disappears(tmp_path: Path) -> None:
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
+def test_window_close_quits_gui_after_tray_host_disappears(
+    tmp_path: Path, qapp: QApplication
+) -> None:
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     config = _config(tmp_path)
     tray = MagicMock()
     tray.available = False
     with _running_daemon(config):
         with patch.object(DesktopWindow, "_create_tray", return_value=tray):
             window = DesktopWindow(DesktopSession(config, auto_start=False))
-        with patch.object(app, "quit") as quit_app:
+        with patch.object(qapp, "quit") as quit_app:
             window.close()
         quit_app.assert_called_once()
         tray.stop.assert_called_once()

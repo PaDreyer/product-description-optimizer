@@ -10,9 +10,13 @@ import threading
 import time
 from importlib.resources import files
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 from unittest.mock import Mock, call, patch
 
 import pytest
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QApplication
 
 if sys.platform != "linux":
     pytest.skip("StatusNotifier tray is Linux-specific", allow_module_level=True)
@@ -54,13 +58,13 @@ def test_item_and_menu_dispatch_actions_to_ui() -> None:
 
 
 @pytest.mark.parametrize("host_available", [True, False])
-def test_desktop_uses_dbus_tray_only_when_host_accepts_it(host_available: bool) -> None:
+def test_desktop_uses_dbus_tray_only_when_host_accepts_it(
+    host_available: bool, qapp: QApplication
+) -> None:
     from PySide6.QtGui import QIcon
-    from PySide6.QtWidgets import QApplication
 
     from pdo.desktop.app import DesktopWindow
 
-    app = QApplication.instance() or QApplication([])
     window = SimpleNamespace(
         _tray_dispatcher=SimpleNamespace(invoke=SimpleNamespace(emit=Mock())),
         _show_from_tray=Mock(),
@@ -79,16 +83,13 @@ def test_desktop_uses_dbus_tray_only_when_host_accepts_it(host_available: bool) 
     else:
         assert tray is None
         controller.return_value.stop.assert_called_once()
-    assert app is not None
+    assert qapp is not None
 
 
-def test_dbus_actions_reach_qt_gui_thread() -> None:
-    from PySide6.QtWidgets import QApplication
-
+def test_dbus_actions_reach_qt_gui_thread(qapp: QApplication) -> None:
     from pdo.desktop.app import _UiDispatcher
 
-    app = QApplication.instance() or QApplication([])
-    dispatcher = _UiDispatcher(app)
+    dispatcher = _UiDispatcher(qapp)
     gui_thread = threading.get_ident()
     callback_threads: list[int] = []
     worker = threading.Thread(
@@ -100,7 +101,7 @@ def test_dbus_actions_reach_qt_gui_thread() -> None:
     worker.join(timeout=2)
     deadline = time.monotonic() + 2
     while not callback_threads and time.monotonic() < deadline:
-        app.processEvents()
+        qapp.processEvents()
         time.sleep(0.01)
     assert callback_threads == [gui_thread]
 

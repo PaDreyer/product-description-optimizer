@@ -2,11 +2,25 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import pytest
 
 from pdo.config import PdoConfig
+
+if TYPE_CHECKING:
+    from PySide6.QtWidgets import QApplication
+
+
+@pytest.fixture(scope="session")
+def qapp() -> QApplication:
+    """Return one shared Qt application for tests without a display server."""
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    return QApplication.instance() or QApplication([])
 
 
 @pytest.fixture()

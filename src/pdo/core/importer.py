@@ -1,4 +1,4 @@
-"""CSV importer — reads a semicolon-delimited CSV into the products table.
+"""CSV import and source-data correction with persisted column mappings.
 
 The importer is deliberately encoding-flexible and delimiter-aware.  Column
 mappings (which CSV header maps to product-id, description, context, etc.)
@@ -58,8 +58,11 @@ def import_csv(
         column_mappings: List of :class:`ColumnMapping` defining which CSV
             columns map to ``product_id``, ``description``, and ``context``.
         delimiter: CSV field delimiter (defaults to ``";"``).
-        encoding: File encoding.  When *None* the importer tries UTF-8 first,
-            then falls back to ``cp1252``.
+        encoding: Explicit read codec. When *None*, use the supplied format or
+            detect UTF-8, UTF-16 LE/BE, or CP1252, including supported BOMs.
+        limit: Maximum number of source data rows to read, including skipped rows.
+        format_: Complete CSV encoding and dialect. When absent, use detected
+            encoding but parse with the explicit delimiter and default CSV quoting.
 
     Returns:
         An :class:`ImportResult` summarising what happened.

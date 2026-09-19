@@ -1,8 +1,8 @@
 """Shared base class for two-step LLM optimizers.
 
 Provides the common optimize → validate flow, shared prompt templates,
-and utility methods used by both :class:`GeminiOptimizer` and
-:class:`LocalLLMOptimizer`.  Subclasses only need to implement
+and utility methods used by :class:`GeminiOptimizer`, :class:`ZhipuAIOptimizer`,
+and :class:`LocalLLMOptimizer`. Subclasses only need to implement
 :meth:`_call_llm`.
 """
 

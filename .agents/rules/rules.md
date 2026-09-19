@@ -27,7 +27,7 @@ The daemon processes work through these sequential stages:
 2. **Optimize** — Iterate over each product row, generate an optimized description (e.g., via LLM/API), and update the database record in-place, one product at a time.
 3. **Export** — Extract the optimized data from the database back to a CSV (or other format).
 
-Each stage must be independently resumable. Progress is tracked persistently in the database so the daemon can resume after a crash or restart.
+Optimization progress is persisted per product. On daemon startup, interrupted `processing` rows return to `pending`; the user must start optimization again. `resume` only unpauses an existing job. Interrupted imports and exports must be restarted. Desktop replacement import stages the new batch before replacing the current one; CLI import appends rows. See [Development guide](../../docs/development.md) for current behavior.
 
 ---
 
@@ -46,9 +46,9 @@ pdo import <file.csv>     # Queue a CSV file for import
 pdo optimize              # Start/resume the optimization run
 pdo export <file.csv>     # Export optimized data to CSV
 
-pdo status                # Show current job progress (stage, product N/M, ETA)
+pdo status                # Show stage, product counts, percentage, and pause state
 pdo pause                 # Pause the current operation
-pdo resume                # Resume a paused operation
+pdo resume                # Unpause an existing optimization job
 pdo reset                 # Reset the database and all progress
 
 pdo logs                  # Stream or tail daemon logs (like journalctl)
@@ -60,7 +60,7 @@ pdo logs --follow         # Follow log output in real-time
 - Output should be human-readable by default, with a `--json` flag for machine-readable output.
 - Use colored terminal output (via `rich` or `click` styling) for status, progress, and errors.
 - Show progress bars or spinners where appropriate (e.g., during import or optimization).
-- Exit codes must be meaningful: `0` for success, `1` for general errors, `2` for usage errors.
+- Exit-code target: `0` for success, `1` for general errors, `2` for usage errors. Current commands do not consistently return nonzero on daemon errors; automation must also inspect JSON and background-job results. See the [CLI Reference](../../docs/cli_reference.md).
 
 ---
 
@@ -77,17 +77,19 @@ pdo logs --follow         # Follow log output in real-time
 | Async (if needed)      | `asyncio`              | Only if the daemon needs concurrent I/O    |
 | Testing                | `pytest`               | With `pytest-cov` for coverage             |
 | Linting                | `ruff`                 | Fast, all-in-one Python linter & formatter |
-| Packaging              | `pyproject.toml`       | Modern Python packaging standard           |
+| Desktop GUI            | `PySide6`, `dbus-next` | Qt screens; Linux StatusNotifierItem tray   |
+| Packaging              | `pyproject.toml`, PyInstaller | AppImage, Debian package, Windows Inno Setup installer |
 
 ---
 
 ## Database
 
-- Use **SQLite** as the local database. One database file per optimization run.
+- Use **SQLite** as the local database. One active batch in `pdo.db` per data directory; successive runs share it.
 - Store the database file inside a configurable data directory (default: `~/.pdo/data/`).
 - Schema must include:
-  - A `products` table with all CSV columns plus `optimized_description`, `status` (pending/processing/done/error), and timestamps.
-  - A `metadata` table to track the overall pipeline state (current stage, total products, processed count, etc.).
+  - A `products` table with original CSV columns stored in `raw_data` JSON, extracted ID/description/context, optimized text, status (`pending`/`processing`/`done`/`error`), error category/message, and timestamps.
+  - A singleton `pipeline_state` table for stage, source path, and counters.
+  - `column_mappings` for semantic roles and `metadata` for source headers/CSV format.
 - All database access must use **parameterized queries** — never interpolate user data into SQL strings.
 - Wrap multi-step mutations in **transactions**.
 
@@ -160,7 +162,7 @@ product_description_optimizer/
 
 - Use **custom exception classes** that inherit from a common `PdoError` base.
 - Never silently swallow exceptions — always log and re-raise or handle explicitly.
-- The daemon must be crash-resilient: if it dies mid-optimization, restarting should resume from the last completed product.
+- Preserve completed products after a crash. Startup requeues interrupted products, and a new optimization request processes pending rows. Failed products require an explicit retry.
 
 ### Logging
 
@@ -176,7 +178,7 @@ product_description_optimizer/
 - All business logic in `core/` must have unit tests.
 - Use **fixtures** for database setup/teardown (in-memory SQLite for tests).
 - Test the CLI commands using `click.testing.CliRunner`.
-- Aim for **≥80% code coverage** on `core/` and `cli/`.
+- Aim for **≥80% code coverage** on `src/pdo/`; use `make test` to inspect it. CI currently runs tests without a numeric coverage gate.
 - Tests must pass before any merge or release.
 
 ---
@@ -186,10 +188,11 @@ product_description_optimizer/
 - Store runtime configuration in `~/.pdo/config.toml` (or similar).
 - Support environment variable overrides with a `PDO_` prefix (e.g., `PDO_DATA_DIR`).
 - Configuration hierarchy (highest priority first):
-  1. CLI flags / arguments
-  2. Environment variables
+  1. Explicit overrides passed to `load_config`
+  2. `PDO_` environment variables
   3. Config file (`~/.pdo/config.toml`)
   4. Built-in defaults
+- Command options must explicitly forward their config/overrides. The CLI currently honors `--config` only for config management and optimizer listing. Provider API-key environment variables are fallbacks behind nonempty saved keys. See [Configuration reference](../../docs/cli_reference.md#configuration-reference) for refresh behavior and limitations.
 
 ---
 

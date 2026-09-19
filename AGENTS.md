@@ -27,12 +27,18 @@ make format        # equivalent to: ruff format src/ tests/
 src/pdo/
 ├── cli/          # CLI commands and utilities
 ├── core/         # Business logic (db, importer, optimizer, exporter)
+│   ├── csv_format.py       # Shared CSV dialect, encoding, and serialization
+│   ├── error_groups.py     # Retry categories and recovery guidance
+│   └── model_discovery.py  # OpenAI-compatible model listing
 ├── daemon/        # Background process (server, worker, pid)
 │   ├── launcher.py   # Shared CLI/GUI detached startup
 │   ├── lifecycle.py  # Safe stop and stale-file cleanup
 │   ├── endpoint.py   # Authenticated loopback endpoint discovery
 │   └── startup.py    # One-shot parent/child startup notification
 ├── desktop/       # PySide6 GUI and Linux D-Bus tray
+│   ├── app.py       # Guided import, optimization, results, and settings
+│   ├── controls.py  # Shared widgets and CSV format editor
+│   └── session.py   # GUI client facade for the shared daemon
 ├── protocol/      # IPC message definitions
 └── config.py      # Configuration management
 ```
@@ -75,11 +81,12 @@ src/pdo/
 
 ## Testing Guidelines
 
-- Use fixtures from `tests/conftest.py` (db, tmp_path, tmp_data_dir)
+- Use fixtures from `tests/conftest.py` (`test_config`, `tmp_data_dir`, `qapp`) and pytest's `tmp_path`; database fixtures are defined in individual test modules.
 - Test naming: `test_<method_name>` or class-based `Test<ClassName>`
 - For database tests: Use `Database(":memory:")` for in-memory SQLite
 - Import test data from `tests/fixtures/`
 - Aim for ≥80% code coverage on `src/pdo/`
+- For headless runs, use `QT_QPA_PLATFORM=offscreen`; Qt system libraries are still required. Socket and D-Bus tests need local socket access. See [Development guide](docs/development.md) for Linux dependencies and Windows commands.
 
 ## Adding New Optimizer Backends
 
@@ -91,6 +98,7 @@ src/pdo/
    - Add to `list_optimizers()` with dot-namespace config keys (e.g., `optimizer_name.api_key`)
    - Add factory logic in `create_optimizer()` using dot-namespace pattern
 5. Add optional dependency to `pyproject.toml` [project.optional-dependencies]
+6. Put shared model/address defaults in `core/provider_defaults.py`. For desktop/release support, update provider settings in `desktop/app.py`, setup/build dependency lists, and PyInstaller hidden imports in both platform build scripts.
 
 ### Example: ZhipuAI Optimizer
 
@@ -138,5 +146,8 @@ local_llm.address = "http://127.0.0.1:11434/v1"
 ## References
 
 - Design/architecture: `.agents/rules/rules.md`
+- Current architecture, platform setup, and test selection: [Development guide](docs/development.md)
+- User-facing command behavior and known limitations: [CLI Reference](docs/cli_reference.md)
+- Documentation findings and outstanding code issues: [Documentation audit](docs/documentation_audit.md)
 - All commands: `Makefile` (test, lint, format)
 - Ruff/pytest config: `pyproject.toml` [tool.ruff] and [tool.pytest]

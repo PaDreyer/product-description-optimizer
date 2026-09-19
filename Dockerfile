@@ -20,9 +20,10 @@ FROM python:3.12-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Define central paths for PDO data, logs, and socket so CLI and daemon stay in sync
+# Current clients discover the authenticated TCP endpoint inside PDO_DATA_DIR.
 ENV PDO_DATA_DIR=/var/lib/pdo/data
 ENV PDO_LOG_DIR=/var/log/pdo
+# Retained for discovery of older Unix-socket daemons during migration.
 ENV PDO_SOCKET_PATH=/var/lib/pdo/pdo.sock
 
 # Create necessary directories for PDO
